@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Create Master Batch</h1>
+<form method="post" class="card">
+  <label>Item</label>
+  <select name="item_id" required>
+    {% for item in items %}
+      <option value="{{ item.id }}">{{ item.category }} — {{ item.name }} / master {{ item.master_shelf_life_days }}d / in-use {{ item.in_use_shelf_life_hours }}h</option>
+    {% endfor %}
+  </select>
+
+  <label>Prepped By</label>
+  <select name="user_id" required>
+    {% for user in users %}
+      <option value="{{ user.id }}">{{ user.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label>Made At</label>
+  <input type="datetime-local" name="made_at" value="{{ now }}" required>
+
+  <label>Notes</label>
+  <textarea name="notes" rows="3"></textarea>
+
+  <button type="submit">Create Batch</button>
+</form>
+{% endblock %}

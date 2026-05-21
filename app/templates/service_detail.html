@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>{{ service.item_name }}</h1>
+  <h2>{{ service.service_code }}</h2>
+  <p><strong>In-Use Expires:</strong> {{ service.expires_at }}</p>
+  <p><strong>Parent Batch:</strong> <a href="/b/{{ service.batch_code }}">{{ service.batch_code }}</a></p>
+  <p><strong>Made:</strong> {{ service.made_at }} by {{ service.made_by }}</p>
+  <p><strong>Bottled:</strong> {{ service.bottled_at }} by {{ service.bottled_by }}</p>
+  <p><strong>Storage:</strong> {{ service.storage }}</p>
+  {% if service.allergens %}<p><strong>Allergens:</strong> {{ service.allergens }}</p>{% endif %}
+
+  <form method="post" action="/print/service/{{ service.service_code }}" style="display:inline">
+    <button type="submit">Print Service Label</button>
+  </form>
+  <a class="btn light" href="/label/service/{{ service.service_code }}.png">Preview PNG</a>
+</div>
+
+<h2>Label Preview</h2>
+<img class="label-preview" src="/label/service/{{ service.service_code }}.png">
+{% endblock %}

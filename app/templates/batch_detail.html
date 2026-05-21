@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <h1>{{ batch.item_name }}</h1>
+  <h2>{{ batch.batch_code }}</h2>
+  <p><strong>Use By:</strong> {{ batch.expires_at }}</p>
+  <p><strong>Made:</strong> {{ batch.made_at }} by {{ batch.made_by }}</p>
+  <p><strong>Storage:</strong> {{ batch.storage }}</p>
+  {% if batch.allergens %}<p><strong>Allergens:</strong> {{ batch.allergens }}</p>{% endif %}
+
+  <a class="btn" href="/batch/{{ batch.batch_code }}/bottle">Bottle For Service</a>
+  <form method="post" action="/print/batch/{{ batch.batch_code }}" style="display:inline">
+    <button type="submit">Print Batch Label</button>
+  </form>
+  <a class="btn light" href="/label/batch/{{ batch.batch_code }}.png">Preview PNG</a>
+</div>
+
+<h2>Label Preview</h2>
+<img class="label-preview" src="/label/batch/{{ batch.batch_code }}.png">
+
+<h2>Service Bottles From This Batch</h2>
+<div class="grid">
+{% for s in services %}
+  <div class="card">
+    <h3>{{ s.service_code }}</h3>
+    <p>Bottled {{ s.bottled_at }} by {{ s.bottled_by }}</p>
+    <p>Expires {{ s.expires_at }}</p>
+    <a class="btn" href="/s/{{ s.service_code }}">Open</a>
+  </div>
+{% else %}
+  <p>No service bottles yet.</p>
+{% endfor %}
+</div>
+{% endblock %}

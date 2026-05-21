@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid">
+  <a class="btn big-btn" href="/batch/new">Create Batch</a>
+  <div class="card">
+    <h2>Bottle Existing Batch</h2>
+    <p class="muted">Choose a recent master batch to create an in-use service bottle label.</p>
+  </div>
+</div>
+
+<h2>Recent Master Batches</h2>
+<div class="grid">
+{% for b in batches %}
+  <div class="card">
+    <h3>{{ b.item_name }}</h3>
+    <p><strong>{{ b.batch_code }}</strong></p>
+    <p>Made by {{ b.made_by }}</p>
+    <a class="btn" href="/b/{{ b.batch_code }}">Open</a>
+    <a class="btn secondary" href="/batch/{{ b.batch_code }}/bottle">Bottle</a>
+  </div>
+{% else %}
+  <p>No batches yet.</p>
+{% endfor %}
+</div>
+
+<h2>Recent Service Bottles</h2>
+<div class="grid">
+{% for s in services %}
+  <div class="card">
+    <h3>{{ s.item_name }}</h3>
+    <p><strong>{{ s.service_code }}</strong></p>
+    <p>Bottled by {{ s.bottled_by }}</p>
+    <a class="btn" href="/s/{{ s.service_code }}">Open</a>
+  </div>
+{% else %}
+  <p>No service bottles yet.</p>
+{% endfor %}
+</div>
+{% endblock %}

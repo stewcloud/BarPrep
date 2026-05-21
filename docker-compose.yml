@@ -1,0 +1,11 @@
+services:
+  kitchen-labels:
+    build: .
+    container_name: kitchen-labels
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-5055}:5055"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data

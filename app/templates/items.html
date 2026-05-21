@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin</h1>
+
+<div class="grid">
+  <form method="post" action="/items" class="card">
+    <h2>Add Item</h2>
+    <label>Name</label>
+    <input name="name" required>
+
+    <label>Category</label>
+    <input name="category" value="Prep">
+
+    <label>Master Shelf Life, Days</label>
+    <input name="master_shelf_life_days" type="number" value="7" min="0">
+
+    <label>In-Use Shelf Life, Hours</label>
+    <input name="in_use_shelf_life_hours" type="number" value="24" min="0">
+
+    <label>Storage</label>
+    <input name="storage" value="Keep refrigerated">
+
+    <label>Allergens</label>
+    <input name="allergens">
+
+    <button type="submit">Add Item</button>
+  </form>
+
+  <form method="post" action="/users" class="card">
+    <h2>Add User</h2>
+    <label>Name</label>
+    <input name="name" required>
+    <button type="submit">Add User</button>
+  </form>
+</div>
+
+<h2>Items</h2>
+<table>
+  <tr>
+    <th>Category</th><th>Name</th><th>Master</th><th>In Use</th><th>Storage</th><th>Allergens</th>
+  </tr>
+  {% for i in items %}
+  <tr>
+    <td>{{ i.category }}</td>
+    <td>{{ i.name }}</td>
+    <td>{{ i.master_shelf_life_days }}d</td>
+    <td>{{ i.in_use_shelf_life_hours }}h</td>
+    <td>{{ i.storage }}</td>
+    <td>{{ i.allergens }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>Users</h2>
+<table>
+  <tr><th>Name</th></tr>
+  {% for u in users %}
+  <tr><td>{{ u.name }}</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

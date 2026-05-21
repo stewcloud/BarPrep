@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bottle For Service</h1>
+<div class="card">
+  <h2>{{ batch.item_name }}</h2>
+  <p><strong>Parent Batch:</strong> {{ batch.batch_code }}</p>
+  <p><strong>Made:</strong> {{ batch.made_at }} by {{ batch.made_by }}</p>
+  <p><strong>Master Expires:</strong> {{ batch.expires_at }}</p>
+  <p><strong>In-Use Rule:</strong> {{ batch.in_use_shelf_life_hours }} hours once bottled</p>
+</div>
+
+<form method="post" class="card">
+  <label>Bottled By</label>
+  <select name="user_id" required>
+    {% for user in users %}
+      <option value="{{ user.id }}">{{ user.name }}</option>
+    {% endfor %}
+  </select>
+
+  <label>Bottled At</label>
+  <input type="datetime-local" name="bottled_at" value="{{ now }}" required>
+
+  <label>Notes</label>
+  <textarea name="notes" rows="3"></textarea>
+
+  <button type="submit">Create Service Bottle Label</button>
+</form>
+{% endblock %}
