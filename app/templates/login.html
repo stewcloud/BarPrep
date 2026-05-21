@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Staff Login</h1>
+<form method="post" class="card">
+  <label>User</label>
+  <select name="user_id" required>
+    {% for user in users %}<option value="{{ user.id }}">{{ user.name }}</option>{% endfor %}
+  </select>
+  <label>PIN</label>
+  <input name="pin" type="password" inputmode="numeric" pattern="[0-9]*" autofocus required>
+  <button type="submit">Unlock Staff Actions</button>
+</form>
+<p class="muted">QR detail pages are public/read-only. Creating, bottling, printing, and admin actions require staff login.</p>
+{% endblock %}

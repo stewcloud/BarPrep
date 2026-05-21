@@ -1,8 +1,10 @@
 import os
 import sqlite3
-from datetime import datetime, timedelta, timezone
+import hashlib
+from datetime import datetime, timedelta
 from pathlib import Path
-from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash
+from functools import wraps
+from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session
 from dotenv import load_dotenv
 
 from .labels import render_batch_label, render_service_label
@@ -12,20 +14,23 @@ load_dotenv()
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "5055"))
-DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/kitchen_labels.sqlite")
+DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "dev-change-me")
+app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
 
 
 def now_local_iso():
-    # Simple local timestamp for MVP. Later we can add timezone config.
     return datetime.now().replace(microsecond=0).isoformat(timespec="minutes")
 
 
 def parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def hash_pin(pin: str) -> str:
+    return hashlib.sha256(pin.encode("utf-8")).hexdigest()
 
 
 def db():
@@ -41,6 +46,11 @@ def close_db(error):
     conn = g.pop("db", None)
     if conn is not None:
         conn.close()
+
+
+def column_exists(conn, table, column):
+    cols = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(c[1] == column for c in cols)
 
 
 def init_db():
@@ -93,10 +103,19 @@ def init_db():
     );
     """)
 
-    # Seed users/items.
+    if not column_exists(conn, "users", "pin_hash"):
+        cur.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''")
+    if not column_exists(conn, "users", "is_admin"):
+        cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
-        cur.executemany("INSERT INTO users (name) VALUES (?)", [("Sean",), ("Cat",)])
+        cur.executemany(
+            "INSERT INTO users (name, pin_hash, is_admin) VALUES (?, ?, ?)",
+            [("Sean", hash_pin("1234"), 1), ("Cat", hash_pin("2222"), 0)],
+        )
+    else:
+        cur.execute("UPDATE users SET pin_hash=? WHERE pin_hash=''", (hash_pin("1234"),))
 
     cur.execute("SELECT COUNT(*) AS c FROM items")
     if cur.fetchone()["c"] == 0:
@@ -116,6 +135,50 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+
+def current_user():
+    uid = session.get("user_id")
+    if not uid:
+        return None
+    return db().execute("SELECT * FROM users WHERE id=? AND active=1", (uid,)).fetchone()
+
+
+@app.context_processor
+def inject_user():
+    return {"current_user": current_user(), "brand_name": "BarPrep"}
+
+
+def login_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not current_user():
+            session["next_url"] = request.url
+            return redirect(url_for("login"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
+    if request.method == "POST":
+        user_id = int(request.form["user_id"])
+        pin = request.form["pin"]
+        user = db().execute("SELECT * FROM users WHERE id=? AND active=1", (user_id,)).fetchone()
+        if user and user["pin_hash"] == hash_pin(pin):
+            session["user_id"] = user["id"]
+            flash(f"Signed in as {user['name']}")
+            return redirect(session.pop("next_url", url_for("index")))
+        flash("Incorrect PIN.")
+    return render_template("login.html", users=users)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("Signed out.")
+    return redirect(url_for("index"))
 
 
 def make_batch_code(item_name: str, made_at: datetime) -> str:
@@ -166,6 +229,7 @@ def index():
 
 
 @app.route("/batch/new", methods=["GET", "POST"])
+@login_required
 def new_batch():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
     items = db().execute("SELECT * FROM items WHERE active=1 ORDER BY category, name").fetchall()
@@ -175,35 +239,23 @@ def new_batch():
         user_id = int(request.form["user_id"])
         made_at = parse_dt(request.form["made_at"])
         notes = request.form.get("notes", "")
-
         item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
         if not item:
             abort(404)
-
         expires_at = made_at + timedelta(days=item["master_shelf_life_days"])
         batch_code = make_batch_code(item["name"], made_at)
         created_at = now_local_iso()
-
         db().execute(
             """
             INSERT INTO batches
             (batch_code, item_id, made_at, made_by_user_id, expires_at, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                batch_code,
-                item_id,
-                made_at.isoformat(timespec="minutes"),
-                user_id,
-                expires_at.isoformat(timespec="minutes"),
-                notes,
-                created_at,
-            ),
+            (batch_code, item_id, made_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, created_at),
         )
         db().commit()
         flash(f"Created batch {batch_code}")
         return redirect(url_for("batch_detail", code=batch_code))
-
     return render_template("new_batch.html", users=users, items=items, now=now_local_iso())
 
 
@@ -236,6 +288,7 @@ def batch_detail(code):
 
 
 @app.route("/batch/<code>/bottle", methods=["GET", "POST"])
+@login_required
 def bottle_batch(code):
     batch = db().execute(
         """
@@ -249,41 +302,27 @@ def bottle_batch(code):
     ).fetchone()
     if not batch:
         abort(404)
-
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
-
     if request.method == "POST":
         user_id = int(request.form["user_id"])
         bottled_at = parse_dt(request.form["bottled_at"])
         notes = request.form.get("notes", "")
-
         parent_expires = parse_dt(batch["expires_at"])
         in_use_expires = bottled_at + timedelta(hours=batch["in_use_shelf_life_hours"])
         expires_at = min(parent_expires, in_use_expires)
-
         service_code = make_service_code(batch["batch_code"])
         created_at = now_local_iso()
-
         db().execute(
             """
             INSERT INTO service_instances
             (service_code, batch_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                service_code,
-                batch["id"],
-                bottled_at.isoformat(timespec="minutes"),
-                user_id,
-                expires_at.isoformat(timespec="minutes"),
-                notes,
-                created_at,
-            ),
+            (service_code, batch["id"], bottled_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, created_at),
         )
         db().commit()
         flash(f"Created service bottle {service_code}")
         return redirect(url_for("service_detail", code=service_code))
-
     return render_template("bottle_batch.html", batch=batch, users=users, now=now_local_iso())
 
 
@@ -308,18 +347,36 @@ def service_detail(code):
     return render_template("service_detail.html", service=service)
 
 
-@app.route("/label/batch/<code>.png")
-def batch_label_png(code):
-    batch = db().execute(
+def load_batch_for_label(code):
+    return db().execute(
         """
         SELECT b.*, i.name AS item_name, i.storage, i.allergens, u.name AS made_by
-        FROM batches b
-        JOIN items i ON i.id = b.item_id
-        JOIN users u ON u.id = b.made_by_user_id
+        FROM batches b JOIN items i ON i.id = b.item_id JOIN users u ON u.id = b.made_by_user_id
         WHERE b.batch_code=?
         """,
         (code,),
     ).fetchone()
+
+
+def load_service_for_label(code):
+    return db().execute(
+        """
+        SELECT s.*, b.batch_code, b.made_at, i.name AS item_name, i.storage, i.allergens,
+               maker.name AS made_by, bottler.name AS bottled_by
+        FROM service_instances s
+        JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = b.item_id
+        JOIN users maker ON maker.id = b.made_by_user_id
+        JOIN users bottler ON bottler.id = s.bottled_by_user_id
+        WHERE s.service_code=?
+        """,
+        (code,),
+    ).fetchone()
+
+
+@app.route("/label/batch/<code>.png")
+def batch_label_png(code):
+    batch = load_batch_for_label(code)
     if not batch:
         abort(404)
     img = render_batch_label(batch, f"{APP_BASE_URL}/b/{code}")
@@ -330,20 +387,7 @@ def batch_label_png(code):
 
 @app.route("/label/service/<code>.png")
 def service_label_png(code):
-    service = db().execute(
-        """
-        SELECT s.*, b.batch_code, b.made_at,
-               i.name AS item_name, i.storage, i.allergens,
-               maker.name AS made_by, bottler.name AS bottled_by
-        FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
-        JOIN users maker ON maker.id = b.made_by_user_id
-        JOIN users bottler ON bottler.id = s.bottled_by_user_id
-        WHERE s.service_code=?
-        """,
-        (code,),
-    ).fetchone()
+    service = load_service_for_label(code)
     if not service:
         abort(404)
     img = render_service_label(service, f"{APP_BASE_URL}/s/{code}")
@@ -353,50 +397,29 @@ def service_label_png(code):
 
 
 @app.post("/print/batch/<code>")
+@login_required
 def print_batch(code):
-    batch = db().execute(
-        """
-        SELECT b.*, i.name AS item_name, i.storage, i.allergens, u.name AS made_by
-        FROM batches b
-        JOIN items i ON i.id = b.item_id
-        JOIN users u ON u.id = b.made_by_user_id
-        WHERE b.batch_code=?
-        """,
-        (code,),
-    ).fetchone()
+    batch = load_batch_for_label(code)
     if not batch:
         abort(404)
     img = render_batch_label(batch, f"{APP_BASE_URL}/b/{code}")
-    result = print_png(img)
-    flash(result)
+    flash(print_png(img))
     return redirect(url_for("batch_detail", code=code))
 
 
 @app.post("/print/service/<code>")
+@login_required
 def print_service(code):
-    service = db().execute(
-        """
-        SELECT s.*, b.batch_code, b.made_at,
-               i.name AS item_name, i.storage, i.allergens,
-               maker.name AS made_by, bottler.name AS bottled_by
-        FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
-        JOIN users maker ON maker.id = b.made_by_user_id
-        JOIN users bottler ON bottler.id = s.bottled_by_user_id
-        WHERE s.service_code=?
-        """,
-        (code,),
-    ).fetchone()
+    service = load_service_for_label(code)
     if not service:
         abort(404)
     img = render_service_label(service, f"{APP_BASE_URL}/s/{code}")
-    result = print_png(img)
-    flash(result)
+    flash(print_png(img))
     return redirect(url_for("service_detail", code=code))
 
 
 @app.route("/items")
+@login_required
 def items():
     items = db().execute("SELECT * FROM items ORDER BY category, name").fetchall()
     users = db().execute("SELECT * FROM users ORDER BY name").fetchall()
@@ -404,6 +427,7 @@ def items():
 
 
 @app.post("/items")
+@login_required
 def add_item():
     db().execute(
         """
@@ -411,23 +435,34 @@ def add_item():
         (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
-        (
-            request.form["name"],
-            request.form.get("category", "Prep"),
-            int(request.form.get("master_shelf_life_days", "7")),
-            int(request.form.get("in_use_shelf_life_hours", "24")),
-            request.form.get("storage", "Keep refrigerated"),
-            request.form.get("allergens", ""),
-        ),
+        (request.form["name"], request.form.get("category", "Prep"), int(request.form.get("master_shelf_life_days", "7")), int(request.form.get("in_use_shelf_life_hours", "24")), request.form.get("storage", "Keep refrigerated"), request.form.get("allergens", "")),
     )
     db().commit()
     return redirect(url_for("items"))
 
 
 @app.post("/users")
+@login_required
 def add_user():
-    db().execute("INSERT INTO users (name) VALUES (?)", (request.form["name"],))
+    pin = request.form.get("pin", "")
+    if len(pin) < 4:
+        flash("PIN must be at least 4 digits.")
+        return redirect(url_for("items"))
+    db().execute("INSERT INTO users (name, pin_hash, is_admin) VALUES (?, ?, ?)", (request.form["name"], hash_pin(pin), 0))
     db().commit()
+    return redirect(url_for("items"))
+
+
+@app.post("/users/<int:user_id>/pin")
+@login_required
+def update_user_pin(user_id):
+    pin = request.form.get("pin", "")
+    if len(pin) < 4:
+        flash("PIN must be at least 4 digits.")
+        return redirect(url_for("items"))
+    db().execute("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(pin), user_id))
+    db().commit()
+    flash("PIN updated.")
     return redirect(url_for("items"))
 
 
