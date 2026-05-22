@@ -1,10 +1,12 @@
 import os
 import sqlite3
 import hashlib
+import csv
+import io
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
-from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session
+from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session, Response
 from dotenv import load_dotenv
 
 from .labels import render_batch_label, render_service_label
@@ -17,12 +19,20 @@ APP_PORT = int(os.getenv("APP_PORT", "5055"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
 
+SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
+MAX_PIN_ATTEMPTS = int(os.getenv("MAX_PIN_ATTEMPTS", "6"))
+PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "10"))
+
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
+app.permanent_session_lifetime = timedelta(hours=SESSION_HOURS)
 
+
+def now_local():
+    return datetime.now().replace(microsecond=0)
 
 def now_local_iso():
-    return datetime.now().replace(microsecond=0).isoformat(timespec="minutes")
+    return now_local().isoformat(timespec="minutes")
 
 
 def parse_dt(value: str) -> datetime:
@@ -101,6 +111,13 @@ def init_db():
         FOREIGN KEY(batch_id) REFERENCES batches(id),
         FOREIGN KEY(bottled_by_user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS login_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip_address TEXT NOT NULL,
+        attempted_at TEXT NOT NULL,
+        success INTEGER NOT NULL DEFAULT 0
+    );
     """)
 
     if not column_exists(conn, "users", "pin_hash"):
@@ -159,26 +176,54 @@ def login_required(fn):
     return wrapper
 
 
+def client_ip():
+    return (request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", request.remote_addr)).split(",")[0].strip()
+
+def pin_locked_out(ip):
+    since = (now_local() - timedelta(minutes=PIN_LOCKOUT_MINUTES)).isoformat(timespec="minutes")
+    row = db().execute(
+        "SELECT COUNT(*) AS c FROM login_attempts WHERE ip_address=? AND success=0 AND attempted_at >= ?",
+        (ip, since),
+    ).fetchone()
+    return row["c"] >= MAX_PIN_ATTEMPTS
+
+def record_attempt(ip, success):
+    db().execute(
+        "INSERT INTO login_attempts (ip_address, attempted_at, success) VALUES (?, ?, ?)",
+        (ip, now_local_iso(), 1 if success else 0),
+    )
+    db().commit()
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
+    if current_user():
+        return redirect(url_for("index"))
     if request.method == "POST":
-        user_id = int(request.form["user_id"])
-        pin = request.form["pin"]
-        user = db().execute("SELECT * FROM users WHERE id=? AND active=1", (user_id,)).fetchone()
-        if user and user["pin_hash"] == hash_pin(pin):
+        ip = client_ip()
+        pin = request.form.get("pin", "").strip()
+        if pin_locked_out(ip):
+            flash(f"Too many failed PIN attempts. Try again in {PIN_LOCKOUT_MINUTES} minutes.")
+            return render_template("login.html")
+        user = db().execute(
+            "SELECT * FROM users WHERE active=1 AND pin_hash=?",
+            (hash_pin(pin),),
+        ).fetchone()
+        if user:
+            session.permanent = True
             session["user_id"] = user["id"]
+            record_attempt(ip, True)
             flash(f"Signed in as {user['name']}")
             return redirect(session.pop("next_url", url_for("index")))
+        record_attempt(ip, False)
         flash("Incorrect PIN.")
-    return render_template("login.html", users=users)
+    return render_template("login.html")
 
 
 @app.route("/logout")
 def logout():
     session.clear()
     flash("Signed out.")
-    return redirect(url_for("index"))
+    return redirect(url_for("login"))
 
 
 def make_batch_code(item_name: str, made_at: datetime) -> str:
@@ -203,6 +248,7 @@ def make_service_code(batch_code: str) -> str:
 
 
 @app.route("/")
+@login_required
 def index():
     batches = db().execute(
         """
@@ -440,6 +486,53 @@ def add_item():
     db().commit()
     return redirect(url_for("items"))
 
+@app.post("/items/<int:item_id>")
+@login_required
+def update_item(item_id):
+    db().execute(
+        """
+        UPDATE items
+        SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
+            storage=?, allergens=?, active=?
+        WHERE id=?
+        """,
+        (
+            request.form["name"],
+            request.form.get("category", "Prep"),
+            int(request.form.get("master_shelf_life_days", "7")),
+            int(request.form.get("in_use_shelf_life_hours", "24")),
+            request.form.get("storage", "Keep refrigerated"),
+            request.form.get("allergens", ""),
+            1 if request.form.get("active") == "on" else 0,
+            item_id,
+        ),
+    )
+    db().commit()
+    flash("Item updated.")
+    return redirect(url_for("items"))
+
+@app.get("/items/export.csv")
+@login_required
+def export_items():
+    rows = db().execute(
+        """
+        SELECT name, category, master_shelf_life_days, in_use_shelf_life_hours,
+               storage, allergens, active
+        FROM items
+        ORDER BY category, name
+        """
+    ).fetchall()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "active"])
+    for r in rows:
+        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["active"]])
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=barprep_items.csv"},
+    )
+
 
 @app.post("/users")
 @login_required
@@ -459,6 +552,13 @@ def update_user_pin(user_id):
     pin = request.form.get("pin", "")
     if len(pin) < 4:
         flash("PIN must be at least 4 digits.")
+        return redirect(url_for("items"))
+    existing = db().execute(
+        "SELECT id FROM users WHERE pin_hash=? AND id<>?",
+        (hash_pin(pin), user_id),
+    ).fetchone()
+    if existing:
+        flash("PIN already in use. PINs must be unique.")
         return redirect(url_for("items"))
     db().execute("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(pin), user_id))
     db().commit()

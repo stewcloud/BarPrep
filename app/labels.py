@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw, ImageFont
 import qrcode
 
 # Compact 62mm continuous label canvas. Lower height = less paper used.
-W, H = 696, 320
+W, H = 696, 300
 
 
 def font(size, bold=False):
