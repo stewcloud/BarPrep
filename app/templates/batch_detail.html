@@ -8,7 +8,7 @@
   <p><strong>Storage:</strong> {{ batch.storage }}</p>
   {% if batch.allergens %}<p><strong>Allergens:</strong> {{ batch.allergens }}</p>{% endif %}
 
-  <a class="btn" href="/batch/{{ batch.batch_code }}/bottle">Bottle For Service</a>
+  <a class="btn" href="/batch/{{ batch.batch_code }}/bottle">Bottle From This Batch</a>
   <form method="post" action="/print/batch/{{ batch.batch_code }}" style="display:inline">
     <button type="submit">Print Batch Label</button>
   </form>

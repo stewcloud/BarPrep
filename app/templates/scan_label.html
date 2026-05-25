@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Scan Label</h1>
+<div class="card">
+  <h2>Camera Scan</h2>
+  <p class="muted">Scan a BarPrep QR label to reopen it, reprint it, or bottle from its parent batch.</p>
+  <video id="scanVideo" style="width:100%;max-width:520px;border-radius:16px;background:#111" playsinline></video>
+  <div class="grid" style="margin-top:12px">
+    <button type="button" onclick="startScan()">Start Camera</button>
+    <button type="button" class="secondary" onclick="stopScan()">Stop Camera</button>
+  </div>
+  <p id="scanStatus" class="muted">Camera scanning works best in Chrome/Edge on HTTPS. Manual lookup is below.</p>
+</div>
+
+<form method="post" class="card" id="lookupForm">
+  <h2>Manual Lookup</h2>
+  <label>Batch code, service code, or QR URL</label>
+  <input name="scan_value" id="scanValue" placeholder="PF-20260521-A or https://barprep.stewcloud.com/s/...">
+  <button type="submit">Lookup Label</button>
+</form>
+
+<div class="grid">
+  <div class="card"><h2>Recent Batches</h2>
+    {% for b in recent_batches %}<p><a class="btn light" href="/b/{{ b.batch_code }}">{{ b.item_name }}<br>{{ b.batch_code }}</a></p>{% else %}<p class="muted">No recent batches.</p>{% endfor %}
+  </div>
+  <div class="card"><h2>Recent Service Labels</h2>
+    {% for s in recent_services %}<p><a class="btn light" href="/s/{{ s.service_code }}">{{ s.item_name }}<br>{{ s.service_code }}</a></p>{% else %}<p class="muted">No recent service labels.</p>{% endfor %}
+  </div>
+</div>
+
+<script>
+let stream=null, detector=null, scanning=false;
+function setStatus(m){document.getElementById("scanStatus").textContent=m;}
+function submitScan(v){document.getElementById("scanValue").value=v;document.getElementById("lookupForm").submit();}
+async function startScan(){
+ if(!("BarcodeDetector" in window)){setStatus("QR scanning is not supported in this browser. Use manual lookup or Chrome/Edge on HTTPS.");return;}
+ try{
+  detector=new BarcodeDetector({formats:["qr_code"]});
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+  const video=document.getElementById("scanVideo"); video.srcObject=stream; await video.play();
+  scanning=true; setStatus("Scanning..."); scanLoop();
+ }catch(e){setStatus("Camera error: "+e.message);}
+}
+async function scanLoop(){
+ if(!scanning||!detector)return;
+ const video=document.getElementById("scanVideo");
+ try{const codes=await detector.detect(video); if(codes.length){stopScan(); setStatus("Found label. Opening..."); submitScan(codes[0].rawValue); return;}}catch(e){}
+ requestAnimationFrame(scanLoop);
+}
+function stopScan(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}document.getElementById("scanVideo").srcObject=null;setStatus("Camera stopped.");}
+</script>
+{% endblock %}

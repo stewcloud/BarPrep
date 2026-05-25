@@ -9,7 +9,10 @@
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
     header { background:var(--accent2); color:#fff; padding:16px 20px; display:flex; gap:16px; align-items:center; justify-content:space-between; }
-    .brand { font-size:26px; font-weight:900; letter-spacing:.3px; }
+    .brand { font-size:26px; font-weight:900; letter-spacing:.3px; display:flex; align-items:center; gap:10px; }
+    .logo-mark { width:34px; height:34px; display:inline-block; }
+    .logo-glass { stroke:#f7df9e; stroke-width:3; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+    .logo-fill { fill:#f7df9e; opacity:.75; }
     header a { color:#fff; text-decoration:none; font-weight:800; }
     nav { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
     nav a { background:#333; border-radius:12px; padding:10px 14px; }
@@ -33,11 +36,12 @@
 </head>
 <body>
 <header>
-  <a class="brand" href="/">{{ brand_name }}</a>
+  <a class="brand" href="/"><svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true"><path class="logo-glass" d="M10 12h44L36 33v13l10 6H18l10-6V33L10 12z"/><path class="logo-fill" d="M18 16h28L34 29H30L18 16z"/><circle class="logo-fill" cx="47" cy="13" r="4"/></svg><span>{{ brand_name }}</span></a>
   <nav>
     {% if current_user %}
       <a href="/batch/new">Create Batch</a>
       <a href="/">Bottle</a>
+      <a href="/scan">Scan Label</a>
       <a href="/custom-label">Custom Label</a>
       <a href="/items">Items</a>
       {% if has_role("Manager", "Admin") %}<a href="/users">Users</a>{% endif %}

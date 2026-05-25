@@ -511,6 +511,46 @@ def print_service(code):
 
 
 
+
+@app.route("/scan", methods=["GET", "POST"])
+@login_required
+def scan_label():
+    if request.method == "POST":
+        raw = request.form.get("scan_value", "").strip()
+        if not raw:
+            flash("Enter or scan a label code.")
+            return redirect(url_for("scan_label"))
+        value = raw.strip()
+        if "/b/" in value:
+            code = value.split("/b/", 1)[1].split("?", 1)[0].split("#", 1)[0].strip("/")
+            return redirect(url_for("batch_detail", code=code))
+        if "/s/" in value:
+            code = value.split("/s/", 1)[1].split("?", 1)[0].split("#", 1)[0].strip("/")
+            return redirect(url_for("service_detail", code=code))
+        service = db().execute("SELECT service_code FROM service_instances WHERE lower(service_code)=lower(?)", (value,)).fetchone()
+        if service:
+            return redirect(url_for("service_detail", code=service["service_code"]))
+        batch = db().execute("SELECT batch_code FROM batches WHERE lower(batch_code)=lower(?)", (value,)).fetchone()
+        if batch:
+            return redirect(url_for("batch_detail", code=batch["batch_code"]))
+        flash(f"No batch or service label found for: {raw}")
+        return redirect(url_for("scan_label"))
+
+    recent_batches = db().execute("""
+        SELECT b.batch_code, i.name AS item_name
+        FROM batches b JOIN items i ON i.id = b.item_id
+        ORDER BY b.created_at DESC LIMIT 6
+    """).fetchall()
+    recent_services = db().execute("""
+        SELECT s.service_code, i.name AS item_name
+        FROM service_instances s
+        JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = b.item_id
+        ORDER BY s.created_at DESC LIMIT 6
+    """).fetchall()
+    return render_template("scan_label.html", recent_batches=recent_batches, recent_services=recent_services)
+
+
 @app.route("/custom-label", methods=["GET", "POST"])
 @login_required
 def custom_label():
