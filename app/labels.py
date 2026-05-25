@@ -59,10 +59,10 @@ def make_qr(url):
     return qr.make_image(fill_color="black", back_color="white").convert("1").resize((104, 104))
 
 
-def base_canvas():
-    img = Image.new("1", (W, H), 1)
+def base_canvas(height=H):
+    img = Image.new("1", (W, height), 1)
     draw = ImageDraw.Draw(img)
-    draw.rectangle((0, 0, W - 1, H - 1), outline=0, width=2)
+    draw.rectangle((0, 0, W - 1, height - 1), outline=0, width=2)
     return img, draw
 
 

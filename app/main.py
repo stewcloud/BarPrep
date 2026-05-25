@@ -25,6 +25,21 @@ PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "10"))
 
 ROLES = ["Bartender", "Barback", "Bar Prep", "Manager", "Admin"]
 
+ITEM_CATEGORIES = [
+    "Juices",
+    "Syrups",
+    "Purees",
+    "Infusions",
+    "Spirits",
+    "Garnishes",
+    "Batches",
+    "Sauces",
+    "Prep",
+    "Other",
+]
+
+STORAGE_OPTIONS = ["Keep Refrigerated", "Shelf Stable"]
+
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
 app.permanent_session_lifetime = timedelta(hours=SESSION_HOURS)
@@ -128,6 +143,10 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     if not column_exists(conn, "users", "role"):
         cur.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'Bartender'")
+    if not column_exists(conn, "items", "brix_percent"):
+        cur.execute("ALTER TABLE items ADD COLUMN brix_percent REAL")
+    if not column_exists(conn, "items", "abv_percent"):
+        cur.execute("ALTER TABLE items ADD COLUMN abv_percent REAL")
     cur.execute("UPDATE users SET role='Admin' WHERE is_admin=1")
 
     cur.execute("SELECT COUNT(*) AS c FROM users")
@@ -190,7 +209,7 @@ def manager_required(fn):
 
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role}
+    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role, "item_categories": ITEM_CATEGORIES, "storage_options": STORAGE_OPTIONS}
 
 
 def login_required(fn):
@@ -537,16 +556,18 @@ def item_new():
         db().execute(
             """
             INSERT INTO items
-            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens)
-            VALUES (?, ?, ?, ?, ?, ?)
+            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens, brix_percent, abv_percent)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.form["name"],
                 request.form.get("category", "Prep"),
                 int(request.form.get("master_shelf_life_days", "7")),
                 int(request.form.get("in_use_shelf_life_hours", "24")),
-                request.form.get("storage", "Keep refrigerated"),
+                request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
+                float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
+                float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
             ),
         )
         db().commit()
@@ -566,7 +587,7 @@ def item_edit(item_id):
             """
             UPDATE items
             SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
-                storage=?, allergens=?, active=?
+                storage=?, allergens=?, brix_percent=?, abv_percent=?, active=?
             WHERE id=?
             """,
             (
@@ -574,8 +595,10 @@ def item_edit(item_id):
                 request.form.get("category", "Prep"),
                 int(request.form.get("master_shelf_life_days", "7")),
                 int(request.form.get("in_use_shelf_life_hours", "24")),
-                request.form.get("storage", "Keep refrigerated"),
+                request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
+                float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
+                float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
                 1 if request.form.get("active") == "on" else 0,
                 item_id,
             ),
@@ -592,16 +615,16 @@ def export_items():
     rows = db().execute(
         """
         SELECT name, category, master_shelf_life_days, in_use_shelf_life_hours,
-               storage, allergens, active
+               storage, allergens, brix_percent, abv_percent, active
         FROM items
         ORDER BY category, name
         """
     ).fetchall()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "active"])
+    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "brix_percent", "abv_percent", "active"])
     for r in rows:
-        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["active"]])
+        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["brix_percent"], r["abv_percent"], r["active"]])
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
 
 

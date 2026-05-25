@@ -1,14 +1,45 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{% if item %}Edit Item{% else %}Add Item{% endif %}</h1>
+
 <form method="post" class="card">
-  <label>Name</label><input name="name" value="{{ item.name if item else '' }}" required>
-  <label>Category</label><input name="category" value="{{ item.category if item else 'Prep' }}">
-  <label>Master Shelf Life, Days</label><input name="master_shelf_life_days" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
-  <label>In-Use Shelf Life, Hours</label><input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
-  <label>Storage</label><input name="storage" value="{{ item.storage if item else 'Keep refrigerated' }}">
-  <label>Allergens</label><input name="allergens" value="{{ item.allergens if item else '' }}">
-  {% if item %}<label><input type="checkbox" name="active" {% if item.active %}checked{% endif %} style="width:auto"> Active</label>{% endif %}
-  <button type="submit">Save Item</button> <a class="btn light" href="/items">Cancel</a>
+  <label>Name</label>
+  <input name="name" value="{{ item.name if item else '' }}" required>
+
+  <label>Category</label>
+  <select name="category" required>
+    {% for category in item_categories %}
+      <option value="{{ category }}" {% if item and item.category == category %}selected{% elif not item and category == 'Prep' %}selected{% endif %}>{{ category }}</option>
+    {% endfor %}
+  </select>
+
+  <label>Master Shelf Life, Days</label>
+  <input name="master_shelf_life_days" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
+
+  <label>In-Use Shelf Life, Hours</label>
+  <input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
+
+  <label>Storage</label>
+  <select name="storage" required>
+    {% for storage in storage_options %}
+      <option value="{{ storage }}" {% if item and item.storage == storage %}selected{% elif not item and storage == 'Keep Refrigerated' %}selected{% endif %}>{{ storage }}</option>
+    {% endfor %}
+  </select>
+
+  <label>Brix % <span class="muted">(optional, useful for syrups)</span></label>
+  <input name="brix_percent" type="number" step="0.1" min="0" max="100" value="{{ item.brix_percent if item and item.brix_percent is not none else '' }}">
+
+  <label>ABV % <span class="muted">(optional, useful for infusions/spirits)</span></label>
+  <input name="abv_percent" type="number" step="0.1" min="0" max="100" value="{{ item.abv_percent if item and item.abv_percent is not none else '' }}">
+
+  <label>Allergens</label>
+  <input name="allergens" value="{{ item.allergens if item else '' }}">
+
+  {% if item %}
+    <label><input type="checkbox" name="active" {% if item.active %}checked{% endif %} style="width:auto"> Active</label>
+  {% endif %}
+
+  <button type="submit">Save Item</button>
+  <a class="btn light" href="/items">Cancel</a>
 </form>
 {% endblock %}

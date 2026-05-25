@@ -1,8 +1,8 @@
-# BarPrep v4.1
+# BarPrep v4.2
 
 Commercial bar/kitchen prep label system for Brother QL printers.
 
-## v4.1 changes
+## v4.2 changes
 
 - Custom label page with icon/emoji/symbol field
 - Compact custom label renderer
