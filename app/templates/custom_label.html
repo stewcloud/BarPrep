@@ -1,14 +1,34 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Custom Label</h1>
-<form method="post" class="card" target="_blank">
-  <label>Icon / Emoji / Symbol</label><input name="icon" placeholder="⚠️  🍋  ❄  ★">
-  <p class="muted">Simple black-and-white symbols print most reliably. Full emoji support depends on printer/font rendering.</p>
-  <label>Title</label><input name="title" placeholder="Pineapple Juice" required>
-  <label>Large Text</label><input name="large_text" placeholder="Use Today">
-  <label>Small Text / Notes</label><textarea name="small_text" rows="3" placeholder="Staff only, keep refrigerated, etc."></textarea>
-  <label>Footer</label><input name="footer" placeholder="BarPrep">
-  <div class="grid"><button name="action" value="preview" type="submit">Preview Label</button><button name="action" value="print" type="submit">Print Label</button></div>
+<form method="post" class="card">
+  <label>Icon / Emoji / Symbol</label>
+  <input name="icon" value="{{ form.icon if form else '' }}" placeholder="⚠  ★  ❄  ✓  🍋">
+
+  <p class="muted">Simple black-and-white symbols print most reliably. Full emoji support depends on server fonts and may render as plain symbols.</p>
+
+  <label>Title</label>
+  <input name="title" value="{{ form.title if form else '' }}" placeholder="Pineapple Juice" required>
+
+  <label>Large Text</label>
+  <input name="large_text" value="{{ form.large_text if form else '' }}" placeholder="Use Today">
+
+  <label>Small Text / Notes</label>
+  <textarea name="small_text" rows="3" placeholder="Staff only, keep refrigerated, etc.">{{ form.small_text if form else '' }}</textarea>
+
+  <label>Footer</label>
+  <input name="footer" value="{{ form.footer if form else 'BarPrep' }}" placeholder="BarPrep">
+
+  <div class="grid">
+    <button name="action" value="preview" type="submit">Preview Label</button>
+    <button name="action" value="print" type="submit">Print Label</button>
+  </div>
 </form>
-<div class="card"><h2>Common Symbols</h2><p style="font-size:30px">⚠️ ★ ● ■ ❄ 🔥 ✓ ✕ 🍋 🍍 🍊 🌶️ 🥛 🥥 🍒 🧊</p></div>
+
+<div class="card">
+  <h2>Reliable Symbols</h2>
+  <p style="font-size:30px">⚠ ★ ● ■ ❄ ✓ ✕ + -</p>
+  <h2>Emoji To Try</h2>
+  <p style="font-size:30px">🍋 🍍 🍊 🌶 🥛 🥥 🍒 🧊</p>
+</div>
 {% endblock %}

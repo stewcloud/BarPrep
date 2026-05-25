@@ -502,14 +502,22 @@ def custom_label():
         icon = request.form.get("icon", "")
         footer = request.form.get("footer", "")
         action = request.form.get("action", "preview")
-        img = render_custom_label(title, large_text, small_text, icon, footer)
-        path = Path("/tmp") / "barprep_custom_label.png"
-        img.save(path)
+
+        try:
+            img = render_custom_label(title, large_text, small_text, icon, footer)
+            path = Path("/tmp") / "barprep_custom_label.png"
+            img.save(path)
+        except Exception as exc:
+            flash(f"Custom label render failed: {exc}")
+            return render_template("custom_label.html", form=request.form)
+
         if action == "print":
             flash(print_png(img))
-            return redirect(url_for("custom_label"))
+            return render_template("custom_label.html", form=request.form)
+
         return send_file(path, mimetype="image/png")
-    return render_template("custom_label.html")
+
+    return render_template("custom_label.html", form={})
 
 
 @app.route("/items")
@@ -524,7 +532,6 @@ def items():
 
 @app.route("/items/new", methods=["GET", "POST"])
 @login_required
-@elevated_required
 def item_new():
     if request.method == "POST":
         db().execute(
@@ -550,7 +557,6 @@ def item_new():
 
 @app.route("/items/<int:item_id>/edit", methods=["GET", "POST"])
 @login_required
-@elevated_required
 def item_edit(item_id):
     item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
     if not item:

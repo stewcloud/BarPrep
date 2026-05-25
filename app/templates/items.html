@@ -1,19 +1,26 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Items</h1>
+
 <p>
-  {% if has_role("Bar Prep", "Manager", "Admin") %}<a class="btn" href="/items/new">+ Add Item</a>{% endif %}
+  <a class="btn" href="/items/new">+ Add Item</a>
   <a class="btn light" href="/items/export.csv">Export CSV</a>
 </p>
+
 {% for category, items in grouped.items() %}
-<details class="card" open>
+<details class="card">
   <summary>{{ category }} <span class="muted">({{ items|length }})</span></summary>
   {% for item in items %}
     <div class="item-row">
-      <div><strong>{{ item.name }}</strong><div class="muted">Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if not item.active %} · inactive{% endif %}</div></div>
-      {% if has_role("Bar Prep", "Manager", "Admin") %}<a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>{% endif %}
+      <div>
+        <strong>{{ item.name }}</strong>
+        <div class="muted">Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if not item.active %} · inactive{% endif %}</div>
+      </div>
+      <a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>
     </div>
   {% endfor %}
 </details>
-{% else %}<p>No items found.</p>{% endfor %}
+{% else %}
+<p>No items found.</p>
+{% endfor %}
 {% endblock %}
