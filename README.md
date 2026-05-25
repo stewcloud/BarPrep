@@ -1,8 +1,8 @@
-# BarPrep v4.3
+# BarPrep v4.4
 
 Commercial bar/kitchen prep label system for Brother QL printers.
 
-## v4.3 changes
+## v4.4 changes
 
 - Custom label page with icon/emoji/symbol field
 - Compact custom label renderer
@@ -43,8 +43,15 @@ For safe testing:
 PRINT_MODE=mock
 ```
 
-## v4.3
+## v4.4
 - Placeholder BarPrep logo/wordmark
 - Staff-only Scan Label page
 - Camera QR scanning with manual fallback
 - Scan label opens batch/service detail for reprint or bottling
+
+## v4.4
+
+- Replaces browser-native BarcodeDetector scanning with html5-qrcode
+- Better camera support on iOS, Android, Windows Edge, and Chrome
+- Keeps manual lookup fallback
+- Adds clearer HTTPS/camera permission guidance

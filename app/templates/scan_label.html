@@ -1,15 +1,22 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Scan Label</h1>
+
 <div class="card">
   <h2>Camera Scan</h2>
-  <p class="muted">Scan a BarPrep QR label to reopen it, reprint it, or bottle from its parent batch.</p>
-  <video id="scanVideo" style="width:100%;max-width:520px;border-radius:16px;background:#111" playsinline></video>
+  <p class="muted">
+    Scan a BarPrep QR label to reopen it, reprint it, or bottle from its parent batch.
+    Camera access usually requires HTTPS, so use <strong>https://barprep.stewcloud.com/scan</strong> when using a phone.
+  </p>
+
+  <div id="qr-reader" style="width:100%; max-width:520px; border-radius:16px; overflow:hidden;"></div>
+
   <div class="grid" style="margin-top:12px">
     <button type="button" onclick="startScan()">Start Camera</button>
     <button type="button" class="secondary" onclick="stopScan()">Stop Camera</button>
   </div>
-  <p id="scanStatus" class="muted">Camera scanning works best in Chrome/Edge on HTTPS. Manual lookup is below.</p>
+
+  <p id="scanStatus" class="muted">Ready. If camera scanning fails, use Manual Lookup below.</p>
 </div>
 
 <form method="post" class="card" id="lookupForm">
@@ -28,25 +35,88 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
-let stream=null, detector=null, scanning=false;
-function setStatus(m){document.getElementById("scanStatus").textContent=m;}
-function submitScan(v){document.getElementById("scanValue").value=v;document.getElementById("lookupForm").submit();}
-async function startScan(){
- if(!("BarcodeDetector" in window)){setStatus("QR scanning is not supported in this browser. Use manual lookup or Chrome/Edge on HTTPS.");return;}
- try{
-  detector=new BarcodeDetector({formats:["qr_code"]});
-  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
-  const video=document.getElementById("scanVideo"); video.srcObject=stream; await video.play();
-  scanning=true; setStatus("Scanning..."); scanLoop();
- }catch(e){setStatus("Camera error: "+e.message);}
+let qrScanner = null;
+let isScanning = false;
+
+function setStatus(msg) {
+  document.getElementById("scanStatus").textContent = msg;
 }
-async function scanLoop(){
- if(!scanning||!detector)return;
- const video=document.getElementById("scanVideo");
- try{const codes=await detector.detect(video); if(codes.length){stopScan(); setStatus("Found label. Opening..."); submitScan(codes[0].rawValue); return;}}catch(e){}
- requestAnimationFrame(scanLoop);
+
+function submitScan(value) {
+  document.getElementById("scanValue").value = value;
+  document.getElementById("lookupForm").submit();
 }
-function stopScan(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}document.getElementById("scanVideo").srcObject=null;setStatus("Camera stopped.");}
+
+function isSecureEnough() {
+  return location.protocol === "https:" || location.hostname === "localhost" || location.hostname === "127.0.0.1";
+}
+
+async function startScan() {
+  if (!isSecureEnough()) {
+    setStatus("Camera access requires HTTPS. Open https://barprep.stewcloud.com/scan or use Manual Lookup.");
+    return;
+  }
+
+  if (typeof Html5Qrcode === "undefined") {
+    setStatus("QR scanner library did not load. Check internet access or use Manual Lookup.");
+    return;
+  }
+
+  if (isScanning) return;
+
+  try {
+    qrScanner = new Html5Qrcode("qr-reader");
+    const cameras = await Html5Qrcode.getCameras();
+
+    if (!cameras || cameras.length === 0) {
+      setStatus("No camera found. Check browser permissions or use Manual Lookup.");
+      return;
+    }
+
+    let cameraId = cameras[0].id;
+    const backCamera = cameras.find(c => /back|rear|environment/i.test(c.label || ""));
+    if (backCamera) cameraId = backCamera.id;
+
+    const config = {
+      fps: 10,
+      qrbox: function(viewfinderWidth, viewfinderHeight) {
+        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+        const qrboxSize = Math.floor(minEdge * 0.75);
+        return { width: qrboxSize, height: qrboxSize };
+      },
+      aspectRatio: 1.0
+    };
+
+    await qrScanner.start(
+      cameraId,
+      config,
+      (decodedText) => {
+        stopScan();
+        setStatus("Found label. Opening...");
+        submitScan(decodedText);
+      },
+      () => {}
+    );
+
+    isScanning = true;
+    setStatus("Scanning...");
+  } catch (err) {
+    setStatus("Camera error: " + (err && err.message ? err.message : err));
+  }
+}
+
+async function stopScan() {
+  if (qrScanner && isScanning) {
+    try {
+      await qrScanner.stop();
+      await qrScanner.clear();
+    } catch (err) {}
+  }
+  qrScanner = null;
+  isScanning = false;
+  setStatus("Camera stopped.");
+}
 </script>
 {% endblock %}
