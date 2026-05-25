@@ -1,45 +1,19 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Admin</h1>
-<div class="grid">
-  <form method="post" action="/items" class="card">
-    <h2>Add Item</h2>
-    <label>Name</label><input name="name" required>
-    <label>Category</label><input name="category" value="Prep">
-    <label>Master Shelf Life, Days</label><input name="master_shelf_life_days" type="number" value="7" min="0">
-    <label>In-Use Shelf Life, Hours</label><input name="in_use_shelf_life_hours" type="number" value="24" min="0">
-    <label>Storage</label><input name="storage" value="Keep refrigerated">
-    <label>Allergens</label><input name="allergens">
-    <button type="submit">Add Item</button>
-  </form>
-  <form method="post" action="/users" class="card">
-    <h2>Add User</h2>
-    <label>Name</label><input name="name" required>
-    <label>Unique PIN</label><input name="pin" type="password" inputmode="numeric" pattern="[0-9]*" required>
-    <button type="submit">Add User</button>
-  </form>
-</div>
-<p><a class="btn light" href="/items/export.csv">Export Items CSV</a></p>
-<h2>Items</h2>
-{% for i in items %}
-<form method="post" action="/items/{{ i.id }}" class="card">
-  <div class="grid">
-    <div><label>Name</label><input name="name" value="{{ i.name }}" required></div>
-    <div><label>Category</label><input name="category" value="{{ i.category }}"></div>
-    <div><label>Master Days</label><input name="master_shelf_life_days" type="number" value="{{ i.master_shelf_life_days }}" min="0"></div>
-    <div><label>In-Use Hours</label><input name="in_use_shelf_life_hours" type="number" value="{{ i.in_use_shelf_life_hours }}" min="0"></div>
-    <div><label>Storage</label><input name="storage" value="{{ i.storage }}"></div>
-    <div><label>Allergens</label><input name="allergens" value="{{ i.allergens }}"></div>
-  </div>
-  <label><input type="checkbox" name="active" {% if i.active %}checked{% endif %} style="width:auto"> Active</label>
-  <button type="submit">Save Item</button>
-</form>
-{% endfor %}
-<h2>Users</h2>
-<table>
-  <tr><th>Name</th><th>Change PIN</th></tr>
-  {% for u in users %}
-  <tr><td>{{ u.name }}</td><td><form method="post" action="/users/{{ u.id }}/pin"><input name="pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="New unique PIN" required><button type="submit">Update PIN</button></form></td></tr>
+<h1>Items</h1>
+<p>
+  {% if has_role("Bar Prep", "Manager", "Admin") %}<a class="btn" href="/items/new">+ Add Item</a>{% endif %}
+  <a class="btn light" href="/items/export.csv">Export CSV</a>
+</p>
+{% for category, items in grouped.items() %}
+<details class="card" open>
+  <summary>{{ category }} <span class="muted">({{ items|length }})</span></summary>
+  {% for item in items %}
+    <div class="item-row">
+      <div><strong>{{ item.name }}</strong><div class="muted">Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if not item.active %} · inactive{% endif %}</div></div>
+      {% if has_role("Bar Prep", "Manager", "Admin") %}<a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>{% endif %}
+    </div>
   {% endfor %}
-</table>
+</details>
+{% else %}<p>No items found.</p>{% endfor %}
 {% endblock %}

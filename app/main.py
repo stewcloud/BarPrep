@@ -9,7 +9,7 @@ from functools import wraps
 from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session, Response
 from dotenv import load_dotenv
 
-from .labels import render_batch_label, render_service_label
+from .labels import render_batch_label, render_service_label, render_custom_label
 from .printing import print_png
 
 load_dotenv()
@@ -22,6 +22,8 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip(
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 MAX_PIN_ATTEMPTS = int(os.getenv("MAX_PIN_ATTEMPTS", "6"))
 PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "10"))
+
+ROLES = ["Bartender", "Barback", "Bar Prep", "Manager", "Admin"]
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
@@ -124,12 +126,15 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''")
     if not column_exists(conn, "users", "is_admin"):
         cur.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+    if not column_exists(conn, "users", "role"):
+        cur.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'Bartender'")
+    cur.execute("UPDATE users SET role='Admin' WHERE is_admin=1")
 
     cur.execute("SELECT COUNT(*) AS c FROM users")
     if cur.fetchone()["c"] == 0:
         cur.executemany(
-            "INSERT INTO users (name, pin_hash, is_admin) VALUES (?, ?, ?)",
-            [("Sean", hash_pin("1234"), 1), ("Cat", hash_pin("2222"), 0)],
+            "INSERT INTO users (name, pin_hash, is_admin, role) VALUES (?, ?, ?, ?)",
+            [("Sean", hash_pin("1234"), 1, "Admin"), ("Cat", hash_pin("2222"), 0, "Bartender")],
         )
     else:
         cur.execute("UPDATE users SET pin_hash=? WHERE pin_hash=''", (hash_pin("1234"),))
@@ -161,9 +166,31 @@ def current_user():
     return db().execute("SELECT * FROM users WHERE id=? AND active=1", (uid,)).fetchone()
 
 
+def has_role(*allowed):
+    user = current_user()
+    return bool(user and user["role"] in allowed)
+
+def elevated_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not has_role("Bar Prep", "Manager", "Admin"):
+            flash("This action requires Bar Prep, Manager, or Admin access.")
+            return redirect(url_for("index"))
+        return fn(*args, **kwargs)
+    return wrapper
+
+def manager_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not has_role("Manager", "Admin"):
+            flash("This action requires Manager or Admin access.")
+            return redirect(url_for("index"))
+        return fn(*args, **kwargs)
+    return wrapper
+
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user(), "brand_name": "BarPrep"}
+    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role}
 
 
 def login_required(fn):
@@ -464,52 +491,94 @@ def print_service(code):
     return redirect(url_for("service_detail", code=code))
 
 
+
+@app.route("/custom-label", methods=["GET", "POST"])
+@login_required
+def custom_label():
+    if request.method == "POST":
+        title = request.form.get("title", "")
+        large_text = request.form.get("large_text", "")
+        small_text = request.form.get("small_text", "")
+        icon = request.form.get("icon", "")
+        footer = request.form.get("footer", "")
+        action = request.form.get("action", "preview")
+        img = render_custom_label(title, large_text, small_text, icon, footer)
+        path = Path("/tmp") / "barprep_custom_label.png"
+        img.save(path)
+        if action == "print":
+            flash(print_png(img))
+            return redirect(url_for("custom_label"))
+        return send_file(path, mimetype="image/png")
+    return render_template("custom_label.html")
+
+
 @app.route("/items")
 @login_required
 def items():
-    items = db().execute("SELECT * FROM items ORDER BY category, name").fetchall()
-    users = db().execute("SELECT * FROM users ORDER BY name").fetchall()
-    return render_template("items.html", items=items, users=users)
+    rows = db().execute("SELECT * FROM items ORDER BY category, name").fetchall()
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["category"], []).append(row)
+    return render_template("items.html", grouped=grouped)
 
 
-@app.post("/items")
+@app.route("/items/new", methods=["GET", "POST"])
 @login_required
-def add_item():
-    db().execute(
-        """
-        INSERT INTO items
-        (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (request.form["name"], request.form.get("category", "Prep"), int(request.form.get("master_shelf_life_days", "7")), int(request.form.get("in_use_shelf_life_hours", "24")), request.form.get("storage", "Keep refrigerated"), request.form.get("allergens", "")),
-    )
-    db().commit()
-    return redirect(url_for("items"))
+@elevated_required
+def item_new():
+    if request.method == "POST":
+        db().execute(
+            """
+            INSERT INTO items
+            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                request.form["name"],
+                request.form.get("category", "Prep"),
+                int(request.form.get("master_shelf_life_days", "7")),
+                int(request.form.get("in_use_shelf_life_hours", "24")),
+                request.form.get("storage", "Keep refrigerated"),
+                request.form.get("allergens", ""),
+            ),
+        )
+        db().commit()
+        flash("Item added.")
+        return redirect(url_for("items"))
+    return render_template("item_edit.html", item=None)
 
-@app.post("/items/<int:item_id>")
+
+@app.route("/items/<int:item_id>/edit", methods=["GET", "POST"])
 @login_required
-def update_item(item_id):
-    db().execute(
-        """
-        UPDATE items
-        SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
-            storage=?, allergens=?, active=?
-        WHERE id=?
-        """,
-        (
-            request.form["name"],
-            request.form.get("category", "Prep"),
-            int(request.form.get("master_shelf_life_days", "7")),
-            int(request.form.get("in_use_shelf_life_hours", "24")),
-            request.form.get("storage", "Keep refrigerated"),
-            request.form.get("allergens", ""),
-            1 if request.form.get("active") == "on" else 0,
-            item_id,
-        ),
-    )
-    db().commit()
-    flash("Item updated.")
-    return redirect(url_for("items"))
+@elevated_required
+def item_edit(item_id):
+    item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+    if not item:
+        abort(404)
+    if request.method == "POST":
+        db().execute(
+            """
+            UPDATE items
+            SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
+                storage=?, allergens=?, active=?
+            WHERE id=?
+            """,
+            (
+                request.form["name"],
+                request.form.get("category", "Prep"),
+                int(request.form.get("master_shelf_life_days", "7")),
+                int(request.form.get("in_use_shelf_life_hours", "24")),
+                request.form.get("storage", "Keep refrigerated"),
+                request.form.get("allergens", ""),
+                1 if request.form.get("active") == "on" else 0,
+                item_id,
+            ),
+        )
+        db().commit()
+        flash("Item updated.")
+        return redirect(url_for("items"))
+    return render_template("item_edit.html", item=item)
+
 
 @app.get("/items/export.csv")
 @login_required
@@ -527,43 +596,57 @@ def export_items():
     writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "active"])
     for r in rows:
         writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["active"]])
-    return Response(
-        output.getvalue(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment; filename=barprep_items.csv"},
-    )
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
+
+
+@app.route("/users")
+@login_required
+@manager_required
+def users():
+    users = db().execute("SELECT * FROM users ORDER BY name").fetchall()
+    return render_template("users.html", users=users)
 
 
 @app.post("/users")
 @login_required
+@manager_required
 def add_user():
-    pin = request.form.get("pin", "")
-    if len(pin) < 4:
+    pin = request.form.get("pin", "").strip()
+    role = request.form.get("role", "Bartender")
+    if role not in ROLES:
+        role = "Bartender"
+    if len(pin) < 4 or not pin.isdigit():
         flash("PIN must be at least 4 digits.")
-        return redirect(url_for("items"))
-    db().execute("INSERT INTO users (name, pin_hash, is_admin) VALUES (?, ?, ?)", (request.form["name"], hash_pin(pin), 0))
-    db().commit()
-    return redirect(url_for("items"))
-
-
-@app.post("/users/<int:user_id>/pin")
-@login_required
-def update_user_pin(user_id):
-    pin = request.form.get("pin", "")
-    if len(pin) < 4:
-        flash("PIN must be at least 4 digits.")
-        return redirect(url_for("items"))
-    existing = db().execute(
-        "SELECT id FROM users WHERE pin_hash=? AND id<>?",
-        (hash_pin(pin), user_id),
-    ).fetchone()
-    if existing:
+        return redirect(url_for("users"))
+    if db().execute("SELECT id FROM users WHERE pin_hash=?", (hash_pin(pin),)).fetchone():
         flash("PIN already in use. PINs must be unique.")
-        return redirect(url_for("items"))
-    db().execute("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(pin), user_id))
+        return redirect(url_for("users"))
+    db().execute("INSERT INTO users (name, pin_hash, is_admin, role) VALUES (?, ?, ?, ?)", (request.form["name"], hash_pin(pin), 1 if role == "Admin" else 0, role))
     db().commit()
-    flash("PIN updated.")
-    return redirect(url_for("items"))
+    return redirect(url_for("users"))
+
+
+@app.post("/users/<int:user_id>")
+@login_required
+@manager_required
+def update_user(user_id):
+    role = request.form.get("role", "Bartender")
+    if role not in ROLES:
+        role = "Bartender"
+    active = 1 if request.form.get("active") == "on" else 0
+    db().execute("UPDATE users SET name=?, role=?, is_admin=?, active=? WHERE id=?", (request.form["name"], role, 1 if role == "Admin" else 0, active, user_id))
+    pin = request.form.get("pin", "").strip()
+    if pin:
+        if len(pin) < 4 or not pin.isdigit():
+            flash("PIN must be at least 4 digits.")
+            return redirect(url_for("users"))
+        if db().execute("SELECT id FROM users WHERE pin_hash=? AND id<>?", (hash_pin(pin), user_id)).fetchone():
+            flash("PIN already in use. PINs must be unique.")
+            return redirect(url_for("users"))
+        db().execute("UPDATE users SET pin_hash=? WHERE id=?", (hash_pin(pin), user_id))
+    db().commit()
+    flash("User updated.")
+    return redirect(url_for("users"))
 
 
 if __name__ == "__main__":

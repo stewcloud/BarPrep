@@ -1,15 +1,25 @@
-# BarPrep v3
+# BarPrep v4
 
 Commercial bar/kitchen prep label system for Brother QL printers.
 
-## v3 changes
-- Public QR URLs ready for `https://barprep.stewcloud.com`
-- PIN-only login; no user dropdown
-- Unique staff PINs identify the user
-- PIN rate limiting and session timeout
-- Public read-only QR pages: `/b/<batch_code>`, `/s/<service_code>`, `/label/*`
-- Protected staff actions: create, bottle, print, admin
-- Compact label format to save continuous label stock
+## v4 changes
+
+- Custom label page with icon/emoji/symbol field
+- Compact custom label renderer
+- Item database is collapsed by category
+- Click into an item to edit
+- Separate Add Item page
+- User roles:
+  - Bartender
+  - Barback
+  - Bar Prep
+  - Manager
+  - Admin
+- Bartender and Barback currently share the same basic permission set
+- Bar Prep, Manager, and Admin can add/edit items
+- Manager and Admin can manage users
+- PIN-only login
+- Public QR URLs for `https://barprep.stewcloud.com`
 - CSV export for items
 
 ## Recommended Unraid environment variables
@@ -25,4 +35,10 @@ BROTHER_PRINTER=tcp://192.168.1.156:9100
 BROTHER_LABEL=62
 SECRET_KEY=change-this-to-a-long-random-string
 SESSION_HOURS=8
+```
+
+For safe testing:
+
+```text
+PRINT_MODE=mock
 ```

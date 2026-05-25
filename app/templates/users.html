@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Users</h1>
+<form method="post" action="/users" class="card">
+  <h2>Add User</h2>
+  <label>Name</label><input name="name" required>
+  <label>Role</label><select name="role">{% for role in roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}</select>
+  <label>Unique PIN</label><input name="pin" type="password" inputmode="numeric" pattern="[0-9]*" required>
+  <button type="submit">Add User</button>
+</form>
+<h2>Existing Users</h2>
+{% for u in users %}
+<form method="post" action="/users/{{ u.id }}" class="card">
+  <label>Name</label><input name="name" value="{{ u.name }}" required>
+  <label>Role</label><select name="role">{% for role in roles %}<option value="{{ role }}" {% if u.role == role %}selected{% endif %}>{{ role }}</option>{% endfor %}</select>
+  <label>New PIN</label><input name="pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="Leave blank to keep current PIN">
+  <label><input type="checkbox" name="active" {% if u.active %}checked{% endif %} style="width:auto"> Active</label>
+  <button type="submit">Save User</button>
+</form>
+{% endfor %}
+{% endblock %}

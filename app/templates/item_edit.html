@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{% if item %}Edit Item{% else %}Add Item{% endif %}</h1>
+<form method="post" class="card">
+  <label>Name</label><input name="name" value="{{ item.name if item else '' }}" required>
+  <label>Category</label><input name="category" value="{{ item.category if item else 'Prep' }}">
+  <label>Master Shelf Life, Days</label><input name="master_shelf_life_days" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
+  <label>In-Use Shelf Life, Hours</label><input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
+  <label>Storage</label><input name="storage" value="{{ item.storage if item else 'Keep refrigerated' }}">
+  <label>Allergens</label><input name="allergens" value="{{ item.allergens if item else '' }}">
+  {% if item %}<label><input type="checkbox" name="active" {% if item.active %}checked{% endif %} style="width:auto"> Active</label>{% endif %}
+  <button type="submit">Save Item</button> <a class="btn light" href="/items">Cancel</a>
+</form>
+{% endblock %}

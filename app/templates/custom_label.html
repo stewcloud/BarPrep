@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Custom Label</h1>
+<form method="post" class="card" target="_blank">
+  <label>Icon / Emoji / Symbol</label><input name="icon" placeholder="⚠️  🍋  ❄  ★">
+  <p class="muted">Simple black-and-white symbols print most reliably. Full emoji support depends on printer/font rendering.</p>
+  <label>Title</label><input name="title" placeholder="Pineapple Juice" required>
+  <label>Large Text</label><input name="large_text" placeholder="Use Today">
+  <label>Small Text / Notes</label><textarea name="small_text" rows="3" placeholder="Staff only, keep refrigerated, etc."></textarea>
+  <label>Footer</label><input name="footer" placeholder="BarPrep">
+  <div class="grid"><button name="action" value="preview" type="submit">Preview Label</button><button name="action" value="print" type="submit">Print Label</button></div>
+</form>
+<div class="card"><h2>Common Symbols</h2><p style="font-size:30px">⚠️ ★ ● ■ ❄ 🔥 ✓ ✕ 🍋 🍍 🍊 🌶️ 🥛 🥥 🍒 🧊</p></div>
+{% endblock %}

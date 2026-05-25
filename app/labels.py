@@ -106,3 +106,21 @@ def render_service_label(service, url):
     draw.text((575, 124), "SCAN", font=F_SMALL, fill=0)
     draw.text((575, 144), "BOTTLE", font=F_SMALL, fill=0)
     return img
+
+
+def render_custom_label(title, large_text='', small_text='', icon='', footer=''):
+    height = 260
+    img, draw = base_canvas(height)
+    x = 18
+    if icon:
+        draw.text((18, 18), icon[:3], font=F_TITLE, fill=0)
+        x = 95
+    draw_wrapped(draw, (title or 'CUSTOM LABEL').upper(), (x, 18), W - x - 24, F_TITLE, max_lines=2)
+    y = 94
+    if large_text:
+        y = draw_wrapped(draw, large_text.upper(), (18, y), W - 36, F_EXPIRE, max_lines=2) + 8
+    if small_text:
+        y = draw_wrapped(draw, small_text, (18, y), W - 36, F_BODY, max_lines=3) + 8
+    if footer:
+        draw.text((18, height - 32), footer, font=F_SMALL, fill=0)
+    return img
