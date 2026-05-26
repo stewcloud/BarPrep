@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bottle Existing Batch</h1>
+<form method="get" class="card">
+  <label>Search batches</label>
+  <input name="q" value="{{ q }}" placeholder="Lime Juice, LJ, PF, batch code...">
+  <button type="submit">Search</button>
+</form>
+<div class="card"><h2>{% if q %}Matching Batches{% else %}Recent Master Batches{% endif %}</h2>
+{% for b in batches %}
+  <div class="item-row"><div><strong>{{ b.batch_code }}</strong><div class="muted">{{ b.item_name }} · {{ b.category }} · made by {{ b.made_by }} · expires {{ b.expires_at }}</div></div><a class="btn" href="/batch/{{ b.batch_code }}/bottle">Bottle</a></div>
+{% else %}<p class="muted">No matching batches.</p>{% endfor %}
+</div>
+{% endblock %}

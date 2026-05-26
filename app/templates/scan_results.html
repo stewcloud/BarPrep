@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Lookup Results</h1>
+<form method="get" action="/scan/results" class="card">
+  <label>Search</label><input name="q" value="{{ q }}" placeholder="Lime Juice, LJ, service code, batch code..."><button type="submit">Search</button>
+</form>
+<div class="grid">
+<div class="card"><h2>Batches</h2>
+{% for b in batches %}
+  <div class="item-row"><div><strong>{{ b.batch_code }}</strong><div class="muted">{{ b.item_name }} · {{ b.category }} · by {{ b.made_by }} · expires {{ b.expires_at }}</div></div><div><a class="btn light" href="/b/{{ b.batch_code }}">Open</a> <a class="btn" href="/batch/{{ b.batch_code }}/bottle">Bottle</a></div></div>
+{% else %}<p class="muted">No matching batches.</p>{% endfor %}
+</div>
+<div class="card"><h2>Service Labels</h2>
+{% for s in services %}
+  <div class="item-row"><div><strong>{{ s.service_code }}</strong><div class="muted">{{ s.item_name }} · batch {{ s.batch_code }} · by {{ s.bottled_by }} · expires {{ s.expires_at }}</div></div><a class="btn light" href="/s/{{ s.service_code }}">Open</a></div>
+{% else %}<p class="muted">No matching service labels.</p>{% endfor %}
+</div>
+</div>
+{% endblock %}

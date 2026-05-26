@@ -2,40 +2,20 @@
 {% block content %}
 <div class="grid">
   <a class="btn big-btn" href="/batch/new">Create Batch</a>
+  <a class="btn big-btn secondary" href="/bottle-existing">Bottle Existing Batch</a>
   <a class="btn big-btn secondary" href="/scan">Scan Label</a>
   <a class="btn big-btn light" href="/custom-label">Custom Label</a>
-  <div class="card">
-    <h2>Bottle Existing Batch</h2>
-    <p class="muted">Choose a recent master batch to create an in-use service bottle label.</p>
-  </div>
 </div>
-
-<h2>Recent Master Batches</h2>
-<div class="grid">
-{% for b in batches %}
-  <div class="card">
-    <h3>{{ b.item_name }}</h3>
-    <p><strong>{{ b.batch_code }}</strong></p>
-    <p>Made by {{ b.made_by }}</p>
-    <a class="btn" href="/b/{{ b.batch_code }}">Open</a>
-    <a class="btn secondary" href="/batch/{{ b.batch_code }}/bottle">Bottle</a>
+<div class="grid" style="margin-top:18px">
+  <div class="card"><h2>Recent Master Batches</h2>
+  {% for b in batches %}
+    <div class="item-row"><div><strong>{{ b.batch_code }}</strong><div class="muted">{{ b.item_name }} · by {{ b.made_by }}</div></div><a class="btn light" href="/b/{{ b.batch_code }}">Open</a></div>
+  {% else %}<p class="muted">No batches yet.</p>{% endfor %}
   </div>
-{% else %}
-  <p>No batches yet.</p>
-{% endfor %}
-</div>
-
-<h2>Recent Service Bottles</h2>
-<div class="grid">
-{% for s in services %}
-  <div class="card">
-    <h3>{{ s.item_name }}</h3>
-    <p><strong>{{ s.service_code }}</strong></p>
-    <p>Bottled by {{ s.bottled_by }}</p>
-    <a class="btn" href="/s/{{ s.service_code }}">Open</a>
+  <div class="card"><h2>Recent Service Bottles</h2>
+  {% for s in services %}
+    <div class="item-row"><div><strong>{{ s.service_code }}</strong><div class="muted">{{ s.item_name }} · by {{ s.bottled_by }}</div></div><a class="btn light" href="/s/{{ s.service_code }}">Open</a></div>
+  {% else %}<p class="muted">No service bottles yet.</p>{% endfor %}
   </div>
-{% else %}
-  <p>No service bottles yet.</p>
-{% endfor %}
 </div>
 {% endblock %}

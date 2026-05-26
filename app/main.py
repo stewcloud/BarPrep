@@ -272,6 +272,9 @@ def logout():
     return redirect(url_for("login"))
 
 
+def item_abbreviation(name):
+    return "".join(word[0] for word in (name or "").upper().split() if word)
+
 def make_batch_code(item_name: str, made_at: datetime) -> str:
     prefix = "".join([word[0] for word in item_name.upper().split()])[:4]
     date_part = made_at.strftime("%Y%m%d")
@@ -319,6 +322,35 @@ def index():
     ).fetchall()
     return render_template("index.html", batches=batches, services=services)
 
+
+
+@app.route("/bottle-existing")
+@login_required
+def bottle_existing():
+    q = request.args.get("q", "").strip()
+    params = []
+    where = ""
+    if q:
+        like = f"%{q}%"
+        where = """WHERE lower(b.batch_code) LIKE lower(?) OR lower(i.name) LIKE lower(?) OR lower(i.category) LIKE lower(?)"""
+        params = [like, like, like]
+    rows = db().execute(
+        f"""
+        SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+        FROM batches b JOIN items i ON i.id=b.item_id JOIN users u ON u.id=b.made_by_user_id
+        {where}
+        ORDER BY b.created_at DESC LIMIT 50
+        """, params).fetchall()
+    if q and len(q) <= 4:
+        q_abbr=q.upper()
+        ids={r["id"] for r in rows}
+        extra=[r for r in db().execute("""
+            SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+            FROM batches b JOIN items i ON i.id=b.item_id JOIN users u ON u.id=b.made_by_user_id
+            ORDER BY b.created_at DESC LIMIT 100
+        """).fetchall() if item_abbreviation(r["item_name"])==q_abbr and r["id"] not in ids]
+        rows=list(rows)+extra
+    return render_template("bottle_existing.html", batches=rows, q=q)
 
 @app.route("/batch/new", methods=["GET", "POST"])
 @login_required
@@ -512,6 +544,42 @@ def print_service(code):
 
 
 
+
+@app.route("/scan/results")
+@login_required
+def scan_results():
+    q=request.args.get("q","").strip()
+    batches=[]; services=[]
+    if q:
+        like=f"%{q}%"
+        batches=db().execute("""
+            SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+            FROM batches b JOIN items i ON i.id=b.item_id JOIN users u ON u.id=b.made_by_user_id
+            WHERE lower(b.batch_code) LIKE lower(?) OR lower(i.name) LIKE lower(?) OR lower(i.category) LIKE lower(?)
+            ORDER BY b.created_at DESC LIMIT 50
+        """,(like,like,like)).fetchall()
+        services=db().execute("""
+            SELECT s.*, b.batch_code, i.name AS item_name, i.category, u.name AS bottled_by
+            FROM service_instances s JOIN batches b ON b.id=s.batch_id JOIN items i ON i.id=b.item_id JOIN users u ON u.id=s.bottled_by_user_id
+            WHERE lower(s.service_code) LIKE lower(?) OR lower(b.batch_code) LIKE lower(?) OR lower(i.name) LIKE lower(?) OR lower(i.category) LIKE lower(?)
+            ORDER BY s.created_at DESC LIMIT 50
+        """,(like,like,like,like)).fetchall()
+        if len(q)<=4:
+            ab=q.upper()
+            bid={r["id"] for r in batches}
+            batches=list(batches)+[r for r in db().execute("""
+                SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+                FROM batches b JOIN items i ON i.id=b.item_id JOIN users u ON u.id=b.made_by_user_id
+                ORDER BY b.created_at DESC LIMIT 100
+            """).fetchall() if item_abbreviation(r["item_name"])==ab and r["id"] not in bid]
+            sid={r["id"] for r in services}
+            services=list(services)+[r for r in db().execute("""
+                SELECT s.*, b.batch_code, i.name AS item_name, i.category, u.name AS bottled_by
+                FROM service_instances s JOIN batches b ON b.id=s.batch_id JOIN items i ON i.id=b.item_id JOIN users u ON u.id=s.bottled_by_user_id
+                ORDER BY s.created_at DESC LIMIT 100
+            """).fetchall() if item_abbreviation(r["item_name"])==ab and r["id"] not in sid]
+    return render_template("scan_results.html", q=q, batches=batches, services=services)
+
 @app.route("/scan", methods=["GET", "POST"])
 @login_required
 def scan_label():
@@ -533,8 +601,7 @@ def scan_label():
         batch = db().execute("SELECT batch_code FROM batches WHERE lower(batch_code)=lower(?)", (value,)).fetchone()
         if batch:
             return redirect(url_for("batch_detail", code=batch["batch_code"]))
-        flash(f"No batch or service label found for: {raw}")
-        return redirect(url_for("scan_label"))
+        return redirect(url_for("scan_results", q=raw))
 
     recent_batches = db().execute("""
         SELECT b.batch_code, i.name AS item_name
