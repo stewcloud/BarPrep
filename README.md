@@ -86,3 +86,7 @@ PRINT_MODE=mock
 - Fixes internal server errors when creating Day of Prep labels
 - Rebuilds service_instances table safely when schema is from an older version
 - Uses one shared safe query for all service label detail/preview/print paths
+
+
+## v5.3a
+- Adds visible build/version number under BarPrep logo
