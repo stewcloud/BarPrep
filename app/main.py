@@ -235,6 +235,48 @@ def init_db():
             ],
         )
 
+    # v5.3 robust service_instances schema repair.
+    # Required for both Bottle Existing Batch and Day of Prep.
+    info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
+    col_names = [c[1] for c in info]
+    batch_col = next((c for c in info if c[1] == "batch_id"), None)
+    needs_rebuild = ("item_id" not in col_names) or (not batch_col) or (batch_col[3] == 1)
+
+    if needs_rebuild:
+        old_rows = conn.execute("SELECT * FROM service_instances").fetchall()
+        cur.execute("DROP TABLE IF EXISTS service_instances_repair")
+        cur.execute("""
+            CREATE TABLE service_instances_repair (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                service_code TEXT NOT NULL UNIQUE,
+                batch_id INTEGER,
+                item_id INTEGER,
+                bottled_at TEXT NOT NULL,
+                bottled_by_user_id INTEGER NOT NULL,
+                expires_at TEXT NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+        """)
+        for row in old_rows:
+            row_keys = row.keys()
+            batch_id = row["batch_id"] if "batch_id" in row_keys else None
+            item_id = row["item_id"] if "item_id" in row_keys else None
+            if item_id is None and batch_id is not None:
+                batch_item = conn.execute("SELECT item_id FROM batches WHERE id=?", (batch_id,)).fetchone()
+                item_id = batch_item["item_id"] if batch_item else None
+            cur.execute("""
+                INSERT OR IGNORE INTO service_instances_repair
+                (id, service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                row["id"], row["service_code"], batch_id, item_id,
+                row["bottled_at"], row["bottled_by_user_id"],
+                row["expires_at"], row["notes"], row["created_at"]
+            ))
+        cur.execute("DROP TABLE service_instances")
+        cur.execute("ALTER TABLE service_instances_repair RENAME TO service_instances")
+
     conn.commit()
     conn.close()
 
@@ -511,13 +553,20 @@ def bottle_batch(code):
     return render_template("bottle_batch.html", batch=batch, users=users, now=now_local_iso())
 
 
-@app.route("/s/<code>")
-def service_detail(code):
-    service = db().execute(
+
+def get_service_record(code):
+    return db().execute(
         """
-        SELECT s.*, b.batch_code, b.made_at, b.expires_at AS batch_expires_at,
-               i.name AS item_name, i.storage, i.allergens,
-               maker.name AS made_by, bottler.name AS bottled_by
+        SELECT
+            s.*,
+            b.batch_code,
+            b.made_at,
+            b.expires_at AS batch_expires_at,
+            i.name AS item_name,
+            i.storage,
+            i.allergens,
+            maker.name AS made_by,
+            bottler.name AS bottled_by
         FROM service_instances s
         LEFT JOIN batches b ON b.id = s.batch_id
         JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
@@ -527,6 +576,10 @@ def service_detail(code):
         """,
         (code,),
     ).fetchone()
+
+@app.route("/s/<code>")
+def service_detail(code):
+    service = get_service_record(code)
     if not service:
         abort(404)
     return render_template("service_detail.html", service=service)
