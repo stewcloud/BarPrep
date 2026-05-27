@@ -390,13 +390,24 @@ def make_batch_code(item_name: str, made_at: datetime) -> str:
     return f"{prefix}-{date_part}-{suffix}"
 
 
-def make_service_code(batch_code: str) -> str:
+def make_service_code(batch_code=None, item_name=None):
+    if batch_code:
+        cur = db().execute(
+            "SELECT COUNT(*) AS c FROM service_instances WHERE service_code LIKE ?",
+            (f"{batch_code}-S%",),
+        )
+        count = cur.fetchone()["c"] + 1
+        return f"{batch_code}-S{count:02d}"
+
+    prefix = item_abbreviation(item_name or "SERVICE")[:4] or "SV"
+    date_part = now_local().strftime("%Y%m%d")
     cur = db().execute(
         "SELECT COUNT(*) AS c FROM service_instances WHERE service_code LIKE ?",
-        (f"{batch_code}-S%",),
+        (f"DS-{prefix}-{date_part}-%",),
     )
     count = cur.fetchone()["c"] + 1
-    return f"{batch_code}-S{count:02d}"
+    suffix = chr(ord("A") + count - 1)
+    return f"DS-{prefix}-{date_part}-{suffix}"
 
 
 @app.route("/")
@@ -529,53 +540,42 @@ def bottle_batch(code):
     ).fetchone()
     if not batch:
         abort(404)
+
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
+
     if request.method == "POST":
         user_id = int(request.form["user_id"])
         bottled_at = parse_dt(request.form["bottled_at"])
         notes = request.form.get("notes", "")
+
         parent_expires = parse_dt(batch["expires_at"])
         in_use_expires = bottled_at + timedelta(hours=batch["in_use_shelf_life_hours"])
         expires_at = min(parent_expires, in_use_expires)
         service_code = make_service_code(batch["batch_code"])
-        created_at = now_local_iso()
+
         db().execute(
             """
             INSERT INTO service_instances
             (service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (service_code, batch["id"], bottled_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, created_at),
+            (
+                service_code,
+                batch["id"],
+                batch["item_id"],
+                bottled_at.isoformat(timespec="minutes"),
+                user_id,
+                expires_at.isoformat(timespec="minutes"),
+                notes,
+                now_local_iso(),
+            ),
         )
         db().commit()
         flash(f"Created service bottle {service_code}")
         return redirect(url_for("service_detail", code=service_code))
+
     return render_template("bottle_batch.html", batch=batch, users=users, now=now_local_iso())
 
-
-
-def get_service_record(code):
-    return db().execute(
-        """
-        SELECT
-            s.*,
-            b.batch_code,
-            b.made_at,
-            b.expires_at AS batch_expires_at,
-            i.name AS item_name,
-            i.storage,
-            i.allergens,
-            maker.name AS made_by,
-            bottler.name AS bottled_by
-        FROM service_instances s
-        LEFT JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
-        LEFT JOIN users maker ON maker.id = b.made_by_user_id
-        JOIN users bottler ON bottler.id = s.bottled_by_user_id
-        WHERE s.service_code=?
-        """,
-        (code,),
-    ).fetchone()
 
 @app.route("/s/<code>")
 def service_detail(code):

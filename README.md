@@ -95,3 +95,8 @@ PRINT_MODE=mock
 - Fixes Day of Prep label creation TypeError in make_service_code
 - Fixes Bottle Existing Batch SQL binding mismatch
 - Build number updated to v5.3b
+
+## v5.3c
+- Correctly patches make_service_code to support Day of Prep labels
+- Correctly patches Bottle Existing Batch insert values
+- Build number updated to v5.3c
