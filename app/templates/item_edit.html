@@ -13,14 +13,14 @@
     {% endfor %}
   </select>
 
-  <label>Master Shelf Life, Days</label>
-  <input name="master_shelf_life_days" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
+  <label id="masterShelfLabel">Master Shelf Life, Days</label>
+  <input name="master_shelf_life_days" id="masterShelf" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
 
   <label>In-Use Shelf Life, Hours</label>
   <input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
 
   <label>Prep Workflow</label>
-  <select name="prep_workflow" required>
+  <select name="prep_workflow" id="prepWorkflow" required>
     {% for workflow in prep_workflows %}
       <option value="{{ workflow }}" {% if item and item.prep_workflow == workflow %}selected{% elif not item and workflow == 'Master Batch' %}selected{% endif %}>{{ workflow }}</option>
     {% endfor %}
@@ -49,4 +49,23 @@
   <button type="submit">Save Item</button>
   <a class="btn light" href="/items">Cancel</a>
 </form>
+<script>
+function toggleMasterShelf() {
+  const workflow = document.getElementById("prepWorkflow");
+  const master = document.getElementById("masterShelf");
+  const label = document.getElementById("masterShelfLabel");
+  if (!workflow || !master) return;
+  if (workflow.value === "Day of Prep") {
+    master.value = "0";
+    master.disabled = true;
+    label.textContent = "Master Shelf Life, Days (disabled for Day of Prep)";
+  } else {
+    master.disabled = false;
+    if (master.value === "0") master.value = "7";
+    label.textContent = "Master Shelf Life, Days";
+  }
+}
+document.getElementById("prepWorkflow")?.addEventListener("change", toggleMasterShelf);
+toggleMasterShelf();
+</script>
 {% endblock %}

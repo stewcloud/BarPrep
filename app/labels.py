@@ -26,7 +26,17 @@ F_BODY = font(20)
 F_SMALL = font(16)
 
 
+def row_get(row, key, default=None):
+    try:
+        value = row[key]
+        return default if value is None else value
+    except Exception:
+        return default
+
+
 def fmt_dt(value):
+    if not value:
+        return ""
     dt = datetime.fromisoformat(value)
     return dt.strftime("%m/%d %I:%M %p").lstrip("0").replace(" 0", " ")
 
@@ -88,23 +98,36 @@ def render_batch_label(batch, url):
 
 def render_service_label(service, url):
     img, draw = base_canvas()
-    img.paste(make_qr(url), (568, 16))
+    qr = make_qr(url)
+    img.paste(qr, (574, 14))
 
-    draw_wrapped(draw, service["item_name"].upper(), (18, 12), 530, F_TITLE, max_lines=2)
-    draw.text((18, 88), "IN USE", font=F_MED, fill=0)
-    draw.text((18, 118), f"EXPIRES: {fmt_dt(service['expires_at'])}", font=F_EXPIRE, fill=0)
+    draw_wrapped(draw, row_get(service, "item_name", "SERVICE").upper(), (16, 10), 540, F_TITLE, max_lines=2)
 
-    y = 166
-    draw.text((18, y), f"Service: {service['service_code']}", font=F_BODY, fill=0); y += 25
-    draw.text((18, y), f"Batch: {service['batch_code']}", font=F_BODY, fill=0); y += 25
-    draw.text((18, y), f"Made: {fmt_dt(service['made_at'])} by {service['made_by']}", font=F_SMALL, fill=0); y += 22
-    draw.text((18, y), f"Bottled: {fmt_dt(service['bottled_at'])} by {service['bottled_by']}", font=F_SMALL, fill=0); y += 22
-    draw.text((18, y), service["storage"], font=F_SMALL, fill=0)
-    if service["allergens"]:
-        draw.text((18, 290), f"Allergens: {service['allergens']}", font=F_SMALL, fill=0)
+    draw.text((16, 82), "IN USE", font=F_MED, fill=0)
+    draw.text((16, 110), f"EXPIRES: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0)
 
-    draw.text((575, 124), "SCAN", font=F_SMALL, fill=0)
-    draw.text((575, 144), "BOTTLE", font=F_SMALL, fill=0)
+    y = 154
+    draw.text((16, y), f"Service: {row_get(service, 'service_code', '')}", font=F_BODY, fill=0); y += 23
+
+    batch_code = row_get(service, "batch_code")
+    if batch_code:
+        draw.text((16, y), f"Batch: {batch_code}", font=F_BODY, fill=0); y += 23
+        made_at = row_get(service, "made_at")
+        if made_at:
+            draw.text((16, y), f"Made: {fmt_dt(made_at)} by {row_get(service, 'made_by', '')}", font=F_SMALL, fill=0); y += 20
+        draw.text((16, y), f"Bottled: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_SMALL, fill=0); y += 20
+    else:
+        draw.text((16, y), "Day of Prep", font=F_BODY, fill=0); y += 23
+        draw.text((16, y), f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_SMALL, fill=0); y += 20
+
+    draw.text((16, y), row_get(service, "storage", ""), font=F_SMALL, fill=0)
+
+    allergens = row_get(service, "allergens", "")
+    if allergens:
+        draw.text((16, 276), f"Allergens: {allergens}", font=F_SMALL, fill=0)
+
+    draw.text((580, 118), "SCAN", font=F_SMALL, fill=0)
+    draw.text((580, 136), "BOTTLE", font=F_SMALL, fill=0)
     return img
 
 

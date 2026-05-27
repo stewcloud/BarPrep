@@ -61,6 +61,12 @@ def hash_pin(pin: str) -> str:
     return hashlib.sha256(pin.encode("utf-8")).hexdigest()
 
 
+def form_master_shelf_days():
+    if request.form.get("prep_workflow") == "Day of Prep":
+        return 0
+    return int(request.form.get("master_shelf_life_days", "7") or 0)
+
+
 def db():
     if "db" not in g:
         Path(DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -152,6 +158,33 @@ def init_db():
         cur.execute("ALTER TABLE items ADD COLUMN prep_workflow TEXT NOT NULL DEFAULT 'Master Batch'")
     cur.execute("UPDATE items SET prep_workflow='Master Batch' WHERE prep_workflow IN ('Batch + Bottle', '', 'batch')")
     cur.execute("UPDATE items SET prep_workflow='Day of Prep' WHERE prep_workflow IN ('Direct Service', 'direct')")
+
+    # v5.2 service_instances safety migration
+    info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
+    batch_col = next((c for c in info if c[1] == "batch_id"), None)
+    has_item_id = any(c[1] == "item_id" for c in info)
+    if batch_col and (batch_col[3] == 1 or not has_item_id):
+        cur.executescript('''
+        DROP TABLE IF EXISTS service_instances_v52;
+        CREATE TABLE service_instances_v52 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_code TEXT NOT NULL UNIQUE,
+            batch_id INTEGER,
+            item_id INTEGER,
+            bottled_at TEXT NOT NULL,
+            bottled_by_user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        INSERT OR IGNORE INTO service_instances_v52
+            (id, service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
+        SELECT s.id, s.service_code, s.batch_id, COALESCE(s.item_id, b.item_id), s.bottled_at, s.bottled_by_user_id, s.expires_at, s.notes, s.created_at
+        FROM service_instances s
+        LEFT JOIN batches b ON b.id = s.batch_id;
+        DROP TABLE service_instances;
+        ALTER TABLE service_instances_v52 RENAME TO service_instances;
+        ''')
     info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
     batch_col = next((c for c in info if c[1] == "batch_id"), None)
     if batch_col and batch_col[3] == 1:
@@ -725,7 +758,7 @@ def item_new():
             (
                 request.form["name"],
                 request.form.get("category", "Prep"),
-                int(request.form.get("master_shelf_life_days", "7")),
+                form_master_shelf_days(),
                 int(request.form.get("in_use_shelf_life_hours", "24")),
                 request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
@@ -757,7 +790,7 @@ def item_edit(item_id):
             (
                 request.form["name"],
                 request.form.get("category", "Prep"),
-                int(request.form.get("master_shelf_life_days", "7")),
+                form_master_shelf_days(),
                 int(request.form.get("in_use_shelf_life_hours", "24")),
                 request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
