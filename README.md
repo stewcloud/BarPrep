@@ -100,3 +100,9 @@ PRINT_MODE=mock
 - Correctly patches make_service_code to support Day of Prep labels
 - Correctly patches Bottle Existing Batch insert values
 - Build number updated to v5.3c
+
+## v5.3d
+- Adds missing get_service_record helper
+- Fixes Day of Prep detail page after successful label creation
+- Ensures service detail, preview, and print paths use one safe service lookup
+- Build number updated to v5.3d

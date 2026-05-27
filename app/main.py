@@ -577,6 +577,31 @@ def bottle_batch(code):
     return render_template("bottle_batch.html", batch=batch, users=users, now=now_local_iso())
 
 
+
+def get_service_record(code):
+    return db().execute(
+        """
+        SELECT
+            s.*,
+            b.batch_code,
+            b.made_at,
+            b.expires_at AS batch_expires_at,
+            i.name AS item_name,
+            i.storage,
+            i.allergens,
+            maker.name AS made_by,
+            bottler.name AS bottled_by
+        FROM service_instances s
+        LEFT JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
+        LEFT JOIN users maker ON maker.id = b.made_by_user_id
+        JOIN users bottler ON bottler.id = s.bottled_by_user_id
+        WHERE s.service_code=?
+        """,
+        (code,),
+    ).fetchone()
+
+
 @app.route("/s/<code>")
 def service_detail(code):
     service = get_service_record(code)
