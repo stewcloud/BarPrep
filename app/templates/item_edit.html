@@ -19,6 +19,13 @@
   <label>In-Use Shelf Life, Hours</label>
   <input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
 
+  <label>Prep Workflow</label>
+  <select name="prep_workflow" required>
+    {% for workflow in prep_workflows %}
+      <option value="{{ workflow }}" {% if item and item.prep_workflow == workflow %}selected{% elif not item and workflow == 'Batch + Bottle' %}selected{% endif %}>{{ workflow }}</option>
+    {% endfor %}
+  </select>
+
   <label>Storage</label>
   <select name="storage" required>
     {% for storage in storage_options %}

@@ -14,7 +14,7 @@
     <div class="item-row">
       <div>
         <strong>{{ item.name }}</strong>
-        <div class="muted">Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if item.brix_percent is not none %} · {{ item.brix_percent }}°Bx{% endif %}{% if item.abv_percent is not none %} · {{ item.abv_percent }}% ABV{% endif %}{% if not item.active %} · inactive{% endif %}</div>
+        <div class="muted">{{ item.prep_workflow }} · Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if item.brix_percent is not none %} · {{ item.brix_percent }}°Bx{% endif %}{% if item.abv_percent is not none %} · {{ item.abv_percent }}% ABV{% endif %}{% if not item.active %} · inactive{% endif %}</div>
       </div>
       <a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>
     </div>

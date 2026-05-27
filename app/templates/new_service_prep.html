@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Create Service Prep</h1>
+<p class="muted">Use this for items that go directly into service and do not need a master batch.</p>
+<form method="post" class="card">
+  <label>Item</label>
+  <select name="item_id" required>
+    {% for item in items %}
+      <option value="{{ item.id }}">{{ item.category }} — {{ item.name }} / in-use {{ item.in_use_shelf_life_hours }}h</option>
+    {% endfor %}
+  </select>
+  <label>Prepped By</label>
+  <select name="user_id" required>
+    {% for user in users %}
+      <option value="{{ user.id }}" {% if current_user and user.id|string == current_user.id|string %}selected{% endif %}>{{ user.name }}</option>
+    {% endfor %}
+  </select>
+  <label>Prepped At</label>
+  <input type="datetime-local" name="prepped_at" value="{{ now }}" required>
+  <label>Notes</label>
+  <textarea name="notes" rows="3"></textarea>
+  <button type="submit">Create Service Label</button>
+</form>
+{% endblock %}

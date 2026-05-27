@@ -39,6 +39,7 @@ ITEM_CATEGORIES = [
 ]
 
 STORAGE_OPTIONS = ["Keep Refrigerated", "Shelf Stable"]
+PREP_WORKFLOWS = ["Batch + Bottle", "Direct Service"]
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
@@ -147,6 +148,31 @@ def init_db():
         cur.execute("ALTER TABLE items ADD COLUMN brix_percent REAL")
     if not column_exists(conn, "items", "abv_percent"):
         cur.execute("ALTER TABLE items ADD COLUMN abv_percent REAL")
+    if not column_exists(conn, "items", "prep_workflow"):
+        cur.execute("ALTER TABLE items ADD COLUMN prep_workflow TEXT NOT NULL DEFAULT 'Batch + Bottle'")
+    info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
+    batch_col = next((c for c in info if c[1] == "batch_id"), None)
+    if batch_col and batch_col[3] == 1:
+        cur.executescript("""
+        CREATE TABLE service_instances_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_code TEXT NOT NULL UNIQUE,
+            batch_id INTEGER,
+            item_id INTEGER,
+            bottled_at TEXT NOT NULL,
+            bottled_by_user_id INTEGER NOT NULL,
+            expires_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        );
+        INSERT INTO service_instances_new (id, service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
+        SELECT s.id, s.service_code, s.batch_id, b.item_id, s.bottled_at, s.bottled_by_user_id, s.expires_at, s.notes, s.created_at
+        FROM service_instances s LEFT JOIN batches b ON b.id=s.batch_id;
+        DROP TABLE service_instances;
+        ALTER TABLE service_instances_new RENAME TO service_instances;
+        """)
+    elif not column_exists(conn, "service_instances", "item_id"):
+        cur.execute("ALTER TABLE service_instances ADD COLUMN item_id INTEGER")
     cur.execute("UPDATE users SET role='Admin' WHERE is_admin=1")
 
     cur.execute("SELECT COUNT(*) AS c FROM users")
@@ -209,7 +235,7 @@ def manager_required(fn):
 
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role, "item_categories": ITEM_CATEGORIES, "storage_options": STORAGE_OPTIONS}
+    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role, "item_categories": ITEM_CATEGORIES, "storage_options": STORAGE_OPTIONS, "prep_workflows": PREP_WORKFLOWS}
 
 
 def login_required(fn):
@@ -313,8 +339,8 @@ def index():
         """
         SELECT s.*, b.batch_code, i.name AS item_name, u.name AS bottled_by
         FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
+        LEFT JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
         JOIN users u ON u.id = s.bottled_by_user_id
         ORDER BY s.created_at DESC
         LIMIT 10
@@ -356,7 +382,7 @@ def bottle_existing():
 @login_required
 def new_batch():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
-    items = db().execute("SELECT * FROM items WHERE active=1 ORDER BY category, name").fetchall()
+    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Batch + Bottle' ORDER BY category, name").fetchall()
 
     if request.method == "POST":
         item_id = int(request.form["item_id"])
@@ -439,8 +465,8 @@ def bottle_batch(code):
         db().execute(
             """
             INSERT INTO service_instances
-            (service_code, batch_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (service_code, batch["id"], bottled_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, created_at),
         )
@@ -458,9 +484,9 @@ def service_detail(code):
                i.name AS item_name, i.storage, i.allergens,
                maker.name AS made_by, bottler.name AS bottled_by
         FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
-        JOIN users maker ON maker.id = b.made_by_user_id
+        LEFT JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
+        LEFT JOIN users maker ON maker.id = b.made_by_user_id
         JOIN users bottler ON bottler.id = s.bottled_by_user_id
         WHERE s.service_code=?
         """,
@@ -488,9 +514,9 @@ def load_service_for_label(code):
         SELECT s.*, b.batch_code, b.made_at, i.name AS item_name, i.storage, i.allergens,
                maker.name AS made_by, bottler.name AS bottled_by
         FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
-        JOIN users maker ON maker.id = b.made_by_user_id
+        LEFT JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
+        LEFT JOIN users maker ON maker.id = b.made_by_user_id
         JOIN users bottler ON bottler.id = s.bottled_by_user_id
         WHERE s.service_code=?
         """,
@@ -611,12 +637,37 @@ def scan_label():
     recent_services = db().execute("""
         SELECT s.service_code, i.name AS item_name
         FROM service_instances s
-        JOIN batches b ON b.id = s.batch_id
-        JOIN items i ON i.id = b.item_id
+        LEFT JOIN batches b ON b.id = s.batch_id
+        JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
         ORDER BY s.created_at DESC LIMIT 6
     """).fetchall()
     return render_template("scan_label.html", recent_batches=recent_batches, recent_services=recent_services)
 
+
+
+@app.route("/service-prep/new", methods=["GET", "POST"])
+@login_required
+def new_service_prep():
+    users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
+    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Direct Service' ORDER BY category, name").fetchall()
+    if request.method == "POST":
+        item_id = int(request.form["item_id"])
+        user_id = int(request.form["user_id"])
+        prepped_at = parse_dt(request.form["prepped_at"])
+        notes = request.form.get("notes", "")
+        item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
+        if not item: abort(404)
+        expires_at = prepped_at + timedelta(hours=item["in_use_shelf_life_hours"])
+        service_code = make_service_code(None, item["name"])
+        db().execute("""
+            INSERT INTO service_instances
+            (service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
+            VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+        """, (service_code, item_id, prepped_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, now_local_iso()))
+        db().commit()
+        flash(f"Created direct service label {service_code}")
+        return redirect(url_for("service_detail", code=service_code))
+    return render_template("new_service_prep.html", users=users, items=items, now=now_local_iso())
 
 @app.route("/custom-label", methods=["GET", "POST"])
 @login_required
@@ -663,8 +714,8 @@ def item_new():
         db().execute(
             """
             INSERT INTO items
-            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens, brix_percent, abv_percent)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens, brix_percent, abv_percent, prep_workflow)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.form["name"],
@@ -675,6 +726,7 @@ def item_new():
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
                 float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
+                request.form.get("prep_workflow", "Batch + Bottle"),
             ),
         )
         db().commit()
@@ -694,7 +746,7 @@ def item_edit(item_id):
             """
             UPDATE items
             SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
-                storage=?, allergens=?, brix_percent=?, abv_percent=?, active=?
+                storage=?, allergens=?, brix_percent=?, abv_percent=?, prep_workflow=?, active=?
             WHERE id=?
             """,
             (
@@ -706,6 +758,7 @@ def item_edit(item_id):
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
                 float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
+                request.form.get("prep_workflow", "Batch + Bottle"),
                 1 if request.form.get("active") == "on" else 0,
                 item_id,
             ),
@@ -722,16 +775,16 @@ def export_items():
     rows = db().execute(
         """
         SELECT name, category, master_shelf_life_days, in_use_shelf_life_hours,
-               storage, allergens, brix_percent, abv_percent, active
+               storage, allergens, brix_percent, abv_percent, prep_workflow, active
         FROM items
         ORDER BY category, name
         """
     ).fetchall()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "brix_percent", "abv_percent", "active"])
+    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "brix_percent", "abv_percent", "prep_workflow", "active"])
     for r in rows:
-        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["brix_percent"], r["abv_percent"], r["active"]])
+        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["brix_percent"], r["abv_percent"], r["prep_workflow"], r["active"]])
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
 
 

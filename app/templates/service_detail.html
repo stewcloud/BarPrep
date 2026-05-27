@@ -4,9 +4,17 @@
   <h1>{{ service.item_name }}</h1>
   <h2>{{ service.service_code }}</h2>
   <p><strong>In-Use Expires:</strong> {{ service.expires_at }}</p>
+  {% if service.batch_code %}
   <p><strong>Parent Batch:</strong> <a href="/b/{{ service.batch_code }}">{{ service.batch_code }}</a></p>
-  <p><strong>Made:</strong> {{ service.made_at }} by {{ service.made_by }}</p>
-  <p><strong>Bottled:</strong> {{ service.bottled_at }} by {{ service.bottled_by }}</p>
+{% else %}
+  <p><strong>Type:</strong> Direct Service Prep</p>
+{% endif %}
+  {% if service.made_at %}
+    <p><strong>Made:</strong> {{ service.made_at }} by {{ service.made_by }}</p>
+    <p><strong>Bottled:</strong> {{ service.bottled_at }} by {{ service.bottled_by }}</p>
+  {% else %}
+    <p><strong>Prepped:</strong> {{ service.bottled_at }} by {{ service.bottled_by }}</p>
+  {% endif %}
   <p><strong>Storage:</strong> {{ service.storage }}</p>
   {% if service.allergens %}<p><strong>Allergens:</strong> {{ service.allergens }}</p>{% endif %}
 
