@@ -90,3 +90,8 @@ PRINT_MODE=mock
 
 ## v5.3a
 - Adds visible build/version number under BarPrep logo
+
+## v5.3b
+- Fixes Day of Prep label creation TypeError in make_service_code
+- Fixes Bottle Existing Batch SQL binding mismatch
+- Build number updated to v5.3b
