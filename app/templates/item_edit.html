@@ -22,7 +22,7 @@
   <label>Prep Workflow</label>
   <select name="prep_workflow" required>
     {% for workflow in prep_workflows %}
-      <option value="{{ workflow }}" {% if item and item.prep_workflow == workflow %}selected{% elif not item and workflow == 'Batch + Bottle' %}selected{% endif %}>{{ workflow }}</option>
+      <option value="{{ workflow }}" {% if item and item.prep_workflow == workflow %}selected{% elif not item and workflow == 'Master Batch' %}selected{% endif %}>{{ workflow }}</option>
     {% endfor %}
   </select>
 

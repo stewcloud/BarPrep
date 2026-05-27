@@ -2,17 +2,26 @@
 {% block content %}
 <h1>Create Master Batch</h1>
 <form method="post" class="card">
+  <label>Category</label>
+  <select id="categorySelect" required>
+    <option value="">Select category...</option>
+    {% for category in item_categories %}
+      <option value="{{ category }}">{{ category }}</option>
+    {% endfor %}
+  </select>
+
   <label>Item</label>
-  <select name="item_id" required>
+  <select name="item_id" id="itemSelect" required disabled>
+    <option value="">Select category first...</option>
     {% for item in items %}
-      <option value="{{ item.id }}">{{ item.category }} — {{ item.name }} / master {{ item.master_shelf_life_days }}d / in-use {{ item.in_use_shelf_life_hours }}h</option>
+      <option value="{{ item.id }}" data-category="{{ item.category }}">{{ item.name }} / master {{ item.master_shelf_life_days }}d / in-use {{ item.in_use_shelf_life_hours }}h</option>
     {% endfor %}
   </select>
 
   <label>Prepped By</label>
   <select name="user_id" required>
     {% for user in users %}
-      <option value="{{ user.id }}">{{ user.name }}</option>
+      <option value="{{ user.id }}" {% if current_user and user.id|string == current_user.id|string %}selected{% endif %}>{{ user.name }}</option>
     {% endfor %}
   </select>
 
@@ -22,6 +31,22 @@
   <label>Notes</label>
   <textarea name="notes" rows="3"></textarea>
 
-  <button type="submit">Create Batch</button>
+  <button type="submit">Create Master Batch</button>
 </form>
+
+<script>
+const categorySelect = document.getElementById("categorySelect");
+const itemSelect = document.getElementById("itemSelect");
+const allOptions = Array.from(itemSelect.querySelectorAll("option[data-category]"));
+categorySelect.addEventListener("change", () => {
+  const category = categorySelect.value;
+  itemSelect.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = category ? "Select item..." : "Select category first...";
+  itemSelect.appendChild(placeholder);
+  allOptions.filter(opt => opt.dataset.category === category).forEach(opt => itemSelect.appendChild(opt.cloneNode(true)));
+  itemSelect.disabled = !category;
+});
+</script>
 {% endblock %}

@@ -39,7 +39,7 @@ ITEM_CATEGORIES = [
 ]
 
 STORAGE_OPTIONS = ["Keep Refrigerated", "Shelf Stable"]
-PREP_WORKFLOWS = ["Batch + Bottle", "Direct Service"]
+PREP_WORKFLOWS = ["Master Batch", "Day of Prep"]
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "barprep-dev-change-me")
@@ -149,7 +149,9 @@ def init_db():
     if not column_exists(conn, "items", "abv_percent"):
         cur.execute("ALTER TABLE items ADD COLUMN abv_percent REAL")
     if not column_exists(conn, "items", "prep_workflow"):
-        cur.execute("ALTER TABLE items ADD COLUMN prep_workflow TEXT NOT NULL DEFAULT 'Batch + Bottle'")
+        cur.execute("ALTER TABLE items ADD COLUMN prep_workflow TEXT NOT NULL DEFAULT 'Master Batch'")
+    cur.execute("UPDATE items SET prep_workflow='Master Batch' WHERE prep_workflow IN ('Batch + Bottle', '', 'batch')")
+    cur.execute("UPDATE items SET prep_workflow='Day of Prep' WHERE prep_workflow IN ('Direct Service', 'direct')")
     info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
     batch_col = next((c for c in info if c[1] == "batch_id"), None)
     if batch_col and batch_col[3] == 1:
@@ -382,7 +384,7 @@ def bottle_existing():
 @login_required
 def new_batch():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
-    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Batch + Bottle' ORDER BY category, name").fetchall()
+    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Master Batch' ORDER BY category, name").fetchall()
 
     if request.method == "POST":
         item_id = int(request.form["item_id"])
@@ -649,8 +651,11 @@ def scan_label():
 @login_required
 def new_service_prep():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
-    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Direct Service' ORDER BY category, name").fetchall()
+    items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Day of Prep' ORDER BY category, name").fetchall()
     if request.method == "POST":
+        if not request.form.get("item_id"):
+            flash("No Day of Prep item selected. Add an item with Prep Workflow = Day of Prep first.")
+            return redirect(url_for("new_service_prep"))
         item_id = int(request.form["item_id"])
         user_id = int(request.form["user_id"])
         prepped_at = parse_dt(request.form["prepped_at"])
@@ -665,7 +670,7 @@ def new_service_prep():
             VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
         """, (service_code, item_id, prepped_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, now_local_iso()))
         db().commit()
-        flash(f"Created direct service label {service_code}")
+        flash(f"Created day-of-prep label {service_code}")
         return redirect(url_for("service_detail", code=service_code))
     return render_template("new_service_prep.html", users=users, items=items, now=now_local_iso())
 
@@ -726,7 +731,7 @@ def item_new():
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
                 float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
-                request.form.get("prep_workflow", "Batch + Bottle"),
+                request.form.get("prep_workflow", "Master Batch"),
             ),
         )
         db().commit()
@@ -758,7 +763,7 @@ def item_edit(item_id):
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
                 float(request.form["abv_percent"]) if request.form.get("abv_percent") else None,
-                request.form.get("prep_workflow", "Batch + Bottle"),
+                request.form.get("prep_workflow", "Master Batch"),
                 1 if request.form.get("active") == "on" else 0,
                 item_id,
             ),
