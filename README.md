@@ -106,3 +106,11 @@ PRINT_MODE=mock
 - Fixes Day of Prep detail page after successful label creation
 - Ensures service detail, preview, and print paths use one safe service lookup
 - Build number updated to v5.3d
+
+## v5.4
+- Removes Sauces category
+- Moves Prep Workflow under Item Name
+- Adds infinite shelf-life option
+- Adds Admin Role Permissions page
+- Adds permission-aware navigation and route protection
+- Build number updated to v5.4

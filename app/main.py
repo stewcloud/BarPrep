@@ -18,6 +18,7 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "5055"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
+APP_VERSION = "v5.4"
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 MAX_PIN_ATTEMPTS = int(os.getenv("MAX_PIN_ATTEMPTS", "6"))
@@ -25,15 +26,34 @@ PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "10"))
 
 ROLES = ["Bartender", "Barback", "Bar Prep", "Manager", "Admin"]
 
+PERMISSIONS = [
+    ("create_master_batch", "Create Master Batch"),
+    ("day_of_prep", "Day of Prep"),
+    ("bottle_existing", "Bottle Existing Batch"),
+    ("custom_label", "Custom Labels"),
+    ("scan_label", "Scan Labels"),
+    ("manage_items", "Manage Items"),
+    ("manage_users", "Manage Users"),
+    ("manage_permissions", "Manage Permissions"),
+]
+
+DEFAULT_ROLE_PERMISSIONS = {
+    "Bartender": ["day_of_prep", "bottle_existing", "custom_label", "scan_label"],
+    "Barback": ["day_of_prep", "bottle_existing", "custom_label", "scan_label"],
+    "Bar Prep": ["create_master_batch", "day_of_prep", "bottle_existing", "custom_label", "scan_label", "manage_items"],
+    "Manager": ["create_master_batch", "day_of_prep", "bottle_existing", "custom_label", "scan_label", "manage_items", "manage_users"],
+    "Admin": ["create_master_batch", "day_of_prep", "bottle_existing", "custom_label", "scan_label", "manage_items", "manage_users", "manage_permissions"],
+}
+
 ITEM_CATEGORIES = [
     "Juices",
     "Syrups",
     "Purees",
     "Infusions",
     "Spirits",
+    "Mixes",
     "Garnishes",
     "Batches",
-    "Sauces",
     "Prep",
     "Other",
 ]
@@ -55,6 +75,22 @@ def now_local_iso():
 
 def parse_dt(value: str) -> datetime:
     return datetime.fromisoformat(value)
+
+
+def shelf_days_from_form():
+    if request.form.get("master_shelf_infinite") == "on":
+        return -1
+    return form_master_shelf_days()
+
+
+def shelf_hours_from_form():
+    if request.form.get("in_use_shelf_infinite") == "on":
+        return -1
+    return int(request.form.get("in_use_shelf_life_hours", "24") or 0)
+
+
+def fmt_expiration(dt):
+    return dt.isoformat(timespec="minutes") if dt else "INFINITE"
 
 
 def hash_pin(pin: str) -> str:
@@ -141,6 +177,12 @@ def init_db():
         ip_address TEXT NOT NULL,
         attempted_at TEXT NOT NULL,
         success INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS role_permissions (
+        role TEXT NOT NULL,
+        permission TEXT NOT NULL,
+        PRIMARY KEY (role, permission)
     );
     """)
 
@@ -277,6 +319,13 @@ def init_db():
         cur.execute("DROP TABLE service_instances")
         cur.execute("ALTER TABLE service_instances_repair RENAME TO service_instances")
 
+    # v5.4 seed role permissions
+    cur.execute("SELECT COUNT(*) AS c FROM role_permissions")
+    if cur.fetchone()["c"] == 0:
+        for role, perms in DEFAULT_ROLE_PERMISSIONS.items():
+            for perm in perms:
+                cur.execute("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
+
     conn.commit()
     conn.close()
 
@@ -312,7 +361,7 @@ def manager_required(fn):
 
 @app.context_processor
 def inject_user():
-    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role, "item_categories": ITEM_CATEGORIES, "storage_options": STORAGE_OPTIONS, "prep_workflows": PREP_WORKFLOWS}
+    return {"current_user": current_user(), "brand_name": "BarPrep", "roles": ROLES, "has_role": has_role, "has_permission": has_permission, "permissions": PERMISSIONS, "item_categories": ITEM_CATEGORIES, "storage_options": STORAGE_OPTIONS, "prep_workflows": PREP_WORKFLOWS, "app_version": APP_VERSION}
 
 
 def login_required(fn):
@@ -440,6 +489,7 @@ def index():
 
 @app.route("/bottle-existing")
 @login_required
+@require_permission("bottle_existing")
 def bottle_existing():
     q = request.args.get("q", "").strip()
     params = []
@@ -468,6 +518,7 @@ def bottle_existing():
 
 @app.route("/batch/new", methods=["GET", "POST"])
 @login_required
+@require_permission("create_master_batch")
 def new_batch():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
     items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Master Batch' ORDER BY category, name").fetchall()
@@ -480,7 +531,7 @@ def new_batch():
         item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
         if not item:
             abort(404)
-        expires_at = made_at + timedelta(days=item["master_shelf_life_days"])
+        expires_at = None if item["master_shelf_life_days"] == -1 else made_at + timedelta(days=item["master_shelf_life_days"])
         batch_code = make_batch_code(item["name"], made_at)
         created_at = now_local_iso()
         db().execute(
@@ -489,7 +540,7 @@ def new_batch():
             (batch_code, item_id, made_at, made_by_user_id, expires_at, notes, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (batch_code, item_id, made_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, created_at),
+            (batch_code, item_id, made_at.isoformat(timespec="minutes"), user_id, fmt_expiration(expires_at), notes, created_at),
         )
         db().commit()
         flash(f"Created batch {batch_code}")
@@ -527,6 +578,7 @@ def batch_detail(code):
 
 @app.route("/batch/<code>/bottle", methods=["GET", "POST"])
 @login_required
+@require_permission("bottle_existing")
 def bottle_batch(code):
     batch = db().execute(
         """
@@ -548,7 +600,7 @@ def bottle_batch(code):
         bottled_at = parse_dt(request.form["bottled_at"])
         notes = request.form.get("notes", "")
 
-        parent_expires = parse_dt(batch["expires_at"])
+        parent_expires = None if batch["expires_at"] == "INFINITE" else parse_dt(batch["expires_at"])
         in_use_expires = bottled_at + timedelta(hours=batch["in_use_shelf_life_hours"])
         expires_at = min(parent_expires, in_use_expires)
         service_code = make_service_code(batch["batch_code"])
@@ -565,7 +617,7 @@ def bottle_batch(code):
                 batch["item_id"],
                 bottled_at.isoformat(timespec="minutes"),
                 user_id,
-                expires_at.isoformat(timespec="minutes"),
+                fmt_expiration(expires_at),
                 notes,
                 now_local_iso(),
             ),
@@ -686,6 +738,7 @@ def print_service(code):
 
 @app.route("/scan/results")
 @login_required
+@require_permission("scan_label")
 def scan_results():
     q=request.args.get("q","").strip()
     batches=[]; services=[]
@@ -721,6 +774,7 @@ def scan_results():
 
 @app.route("/scan", methods=["GET", "POST"])
 @login_required
+@require_permission("scan_label")
 def scan_label():
     if request.method == "POST":
         raw = request.form.get("scan_value", "").strip()
@@ -760,6 +814,7 @@ def scan_label():
 
 @app.route("/service-prep/new", methods=["GET", "POST"])
 @login_required
+@require_permission("day_of_prep")
 def new_service_prep():
     users = db().execute("SELECT * FROM users WHERE active=1 ORDER BY name").fetchall()
     items = db().execute("SELECT * FROM items WHERE active=1 AND prep_workflow='Day of Prep' ORDER BY category, name").fetchall()
@@ -773,13 +828,13 @@ def new_service_prep():
         notes = request.form.get("notes", "")
         item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
         if not item: abort(404)
-        expires_at = prepped_at + timedelta(hours=item["in_use_shelf_life_hours"])
+        expires_at = None if item["in_use_shelf_life_hours"] == -1 else prepped_at + timedelta(hours=item["in_use_shelf_life_hours"])
         service_code = make_service_code(None, item["name"])
         db().execute("""
             INSERT INTO service_instances
             (service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
             VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
-        """, (service_code, item_id, prepped_at.isoformat(timespec="minutes"), user_id, expires_at.isoformat(timespec="minutes"), notes, now_local_iso()))
+        """, (service_code, item_id, prepped_at.isoformat(timespec="minutes"), user_id, fmt_expiration(expires_at), notes, now_local_iso()))
         db().commit()
         flash(f"Created day-of-prep label {service_code}")
         return redirect(url_for("service_detail", code=service_code))
@@ -787,6 +842,7 @@ def new_service_prep():
 
 @app.route("/custom-label", methods=["GET", "POST"])
 @login_required
+@require_permission("custom_label")
 def custom_label():
     if request.method == "POST":
         title = request.form.get("title", "")
@@ -825,6 +881,7 @@ def items():
 
 @app.route("/items/new", methods=["GET", "POST"])
 @login_required
+@require_permission("manage_items")
 def item_new():
     if request.method == "POST":
         db().execute(
@@ -836,8 +893,8 @@ def item_new():
             (
                 request.form["name"],
                 request.form.get("category", "Prep"),
-                form_master_shelf_days(),
-                int(request.form.get("in_use_shelf_life_hours", "24")),
+                shelf_days_from_form(),
+                shelf_hours_from_form(),
                 request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
@@ -853,6 +910,7 @@ def item_new():
 
 @app.route("/items/<int:item_id>/edit", methods=["GET", "POST"])
 @login_required
+@require_permission("manage_items")
 def item_edit(item_id):
     item = db().execute("SELECT * FROM items WHERE id=?", (item_id,)).fetchone()
     if not item:
@@ -868,8 +926,8 @@ def item_edit(item_id):
             (
                 request.form["name"],
                 request.form.get("category", "Prep"),
-                form_master_shelf_days(),
-                int(request.form.get("in_use_shelf_life_hours", "24")),
+                shelf_days_from_form(),
+                shelf_hours_from_form(),
                 request.form.get("storage", "Keep Refrigerated"),
                 request.form.get("allergens", ""),
                 float(request.form["brix_percent"]) if request.form.get("brix_percent") else None,
@@ -904,9 +962,27 @@ def export_items():
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
 
 
+@app.route("/permissions", methods=["GET", "POST"])
+@login_required
+@require_permission("manage_permissions")
+def permissions_page():
+    if request.method == "POST":
+        db().execute("DELETE FROM role_permissions")
+        for role in ROLES:
+            for perm, _label in PERMISSIONS:
+                if request.form.get(f"{role}::{perm}") == "on":
+                    db().execute("INSERT OR IGNORE INTO role_permissions (role, permission) VALUES (?, ?)", (role, perm))
+        db().commit()
+        flash("Role permissions updated.")
+        return redirect(url_for("permissions_page"))
+    rows = db().execute("SELECT role, permission FROM role_permissions").fetchall()
+    assigned = {(r["role"], r["permission"]) for r in rows}
+    return render_template("permissions.html", assigned=assigned)
+
+
 @app.route("/users")
 @login_required
-@manager_required
+@require_permission("manage_users")
 def users():
     users = db().execute("SELECT * FROM users ORDER BY name").fetchall()
     return render_template("users.html", users=users)
@@ -914,7 +990,7 @@ def users():
 
 @app.post("/users")
 @login_required
-@manager_required
+@require_permission("manage_users")
 def add_user():
     pin = request.form.get("pin", "").strip()
     role = request.form.get("role", "Bartender")
@@ -933,7 +1009,7 @@ def add_user():
 
 @app.post("/users/<int:user_id>")
 @login_required
-@manager_required
+@require_permission("manage_users")
 def update_user(user_id):
     role = request.form.get("role", "Bartender")
     if role not in ROLES:

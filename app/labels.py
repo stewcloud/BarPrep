@@ -35,8 +35,8 @@ def row_get(row, key, default=None):
 
 
 def fmt_dt(value):
-    if not value:
-        return ""
+    if not value or value == "INFINITE":
+        return "NO EXPIRATION"
     dt = datetime.fromisoformat(value)
     return dt.strftime("%m/%d %I:%M %p").lstrip("0").replace(" 0", " ")
 

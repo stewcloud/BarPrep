@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Role Permissions</h1>
+<p class="muted">Admin-only page. Changes affect what each role can see and do.</p>
+<form method="post" class="card">
+  <table>
+    <tr><th>Permission</th>{% for role in roles %}<th>{{ role }}</th>{% endfor %}</tr>
+    {% for perm, label in permissions %}
+      <tr>
+        <td><strong>{{ label }}</strong><br><span class="muted">{{ perm }}</span></td>
+        {% for role in roles %}
+          <td><input type="checkbox" name="{{ role }}::{{ perm }}" {% if (role, perm) in assigned %}checked{% endif %}></td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Save Permissions</button>
+</form>
+{% endblock %}

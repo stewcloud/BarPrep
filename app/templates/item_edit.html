@@ -6,18 +6,6 @@
   <label>Name</label>
   <input name="name" value="{{ item.name if item else '' }}" required>
 
-  <label>Category</label>
-  <select name="category" required>
-    {% for category in item_categories %}
-      <option value="{{ category }}" {% if item and item.category == category %}selected{% elif not item and category == 'Prep' %}selected{% endif %}>{{ category }}</option>
-    {% endfor %}
-  </select>
-
-  <label id="masterShelfLabel">Master Shelf Life, Days</label>
-  <input name="master_shelf_life_days" id="masterShelf" type="number" value="{{ item.master_shelf_life_days if item else 7 }}" min="0">
-
-  <label>In-Use Shelf Life, Hours</label>
-  <input name="in_use_shelf_life_hours" type="number" value="{{ item.in_use_shelf_life_hours if item else 24 }}" min="0">
 
   <label>Prep Workflow</label>
   <select name="prep_workflow" id="prepWorkflow" required>
@@ -26,7 +14,23 @@
     {% endfor %}
   </select>
 
-  <label>Storage</label>
+  
+
+  <label>Category</label>
+  <select name="category" required>
+    {% for category in item_categories %}
+      <option value="{{ category }}" {% if item and item.category == category %}selected{% elif not item and category == 'Prep' %}selected{% endif %}>{{ category }}</option>
+    {% endfor %}
+  </select>
+
+  <label id="masterShelfLabel">Master Shelf Life, Days</label>
+  <label><input type="checkbox" name="master_shelf_infinite" id="masterInfinite" {% if item and item.master_shelf_life_days == -1 %}checked{% endif %} style="width:auto"> Infinite ∞</label>
+  <input name="master_shelf_life_days" id="masterShelf" type="number" value="{{ item.master_shelf_life_days if item and item.master_shelf_life_days != -1 else 7 }}" min="0">
+
+  <label>In-Use Shelf Life, Hours</label>
+  <label><input type="checkbox" name="in_use_shelf_infinite" id="inUseInfinite" {% if item and item.in_use_shelf_life_hours == -1 %}checked{% endif %} style="width:auto"> Infinite ∞</label>
+  <input name="in_use_shelf_life_hours" id="inUseShelf" type="number" value="{{ item.in_use_shelf_life_hours if item and item.in_use_shelf_life_hours != -1 else 24 }}" min="0">
+<label>Storage</label>
   <select name="storage" required>
     {% for storage in storage_options %}
       <option value="{{ storage }}" {% if item and item.storage == storage %}selected{% elif not item and storage == 'Keep Refrigerated' %}selected{% endif %}>{{ storage }}</option>
@@ -53,19 +57,31 @@
 function toggleMasterShelf() {
   const workflow = document.getElementById("prepWorkflow");
   const master = document.getElementById("masterShelf");
+  const masterInf = document.getElementById("masterInfinite");
   const label = document.getElementById("masterShelfLabel");
   if (!workflow || !master) return;
   if (workflow.value === "Day of Prep") {
-    master.value = "0";
-    master.disabled = true;
+    master.value = "0"; master.disabled = true;
+    if (masterInf) { masterInf.checked = false; masterInf.disabled = true; }
     label.textContent = "Master Shelf Life, Days (disabled for Day of Prep)";
   } else {
-    master.disabled = false;
-    if (master.value === "0") master.value = "7";
+    if (masterInf) masterInf.disabled = false;
+    master.disabled = masterInf && masterInf.checked;
+    if (!master.disabled && master.value === "0") master.value = "7";
     label.textContent = "Master Shelf Life, Days";
   }
 }
-document.getElementById("prepWorkflow")?.addEventListener("change", toggleMasterShelf);
-toggleMasterShelf();
+function toggleInfinite() {
+  const master = document.getElementById("masterShelf");
+  const masterInf = document.getElementById("masterInfinite");
+  const inUse = document.getElementById("inUseShelf");
+  const inUseInf = document.getElementById("inUseInfinite");
+  if (master && masterInf && !masterInf.disabled) master.disabled = masterInf.checked;
+  if (inUse && inUseInf) inUse.disabled = inUseInf.checked;
+}
+document.getElementById("prepWorkflow")?.addEventListener("change", () => { toggleMasterShelf(); toggleInfinite(); });
+document.getElementById("masterInfinite")?.addEventListener("change", toggleInfinite);
+document.getElementById("inUseInfinite")?.addEventListener("change", toggleInfinite);
+toggleMasterShelf(); toggleInfinite();
 </script>
 {% endblock %}
