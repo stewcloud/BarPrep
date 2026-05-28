@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.4c] - 2026-05-27
+### Added
+- Hamburger navigation menu
+- Floating plus create menu
+- Grouped navigation sections
+
+### Changed
+- Simplified top bar
+- Simplified dashboard quick actions
+
+
 ## [5.4b] - 2026-05-27
 ### Added
 - Optional Emergency Admin PIN via `EMERGENCY_ADMIN_PIN`

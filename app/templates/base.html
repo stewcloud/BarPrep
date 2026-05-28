@@ -8,59 +8,166 @@
     :root { --bg:#f4f1ea; --card:#fffaf0; --text:#1b1712; --muted:#675c4f; --border:#dfd2bd; --accent:#7b2d26; --accent2:#111; }
     * { box-sizing: border-box; }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--text); }
-    header { background:var(--accent2); color:#fff; padding:16px 20px; display:flex; gap:16px; align-items:center; justify-content:space-between; }
-    .brand { font-size:26px; font-weight:900; letter-spacing:.3px; display:flex; align-items:center; gap:10px; }
-    .logo-mark { width:34px; height:34px; display:inline-block; }
+    header { background:var(--accent2); color:#fff; padding:12px 16px; display:flex; gap:12px; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:20; }
+    .left-head { display:flex; align-items:center; gap:12px; min-width:0; }
+    .menu-btn { border:0; background:#333; color:#fff; border-radius:12px; padding:10px 13px; font-size:24px; line-height:1; width:auto; margin:0; }
+    .brand { color:#fff; text-decoration:none; font-size:24px; font-weight:900; letter-spacing:.3px; display:flex; align-items:center; gap:10px; min-width:0; }
+    .logo-mark { width:34px; height:34px; display:inline-block; flex:0 0 auto; }
     .logo-glass { stroke:#f7df9e; stroke-width:3; fill:none; stroke-linecap:round; stroke-linejoin:round; }
     .logo-fill { fill:#f7df9e; opacity:.75; }
     .brand-wrap { display:flex; flex-direction:column; line-height:1; }
     .build-number { font-size:11px; opacity:.7; margin-top:3px; letter-spacing:.08em; }
-    header a { color:#fff; text-decoration:none; font-weight:800; }
-    nav { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    nav a { background:#333; border-radius:12px; padding:10px 14px; }
+    .user-pill { background:#2d2d2d; color:#fff; padding:8px 12px; border-radius:999px; font-weight:800; white-space:nowrap; max-width:42vw; overflow:hidden; text-overflow:ellipsis; }
     main { max-width:1080px; margin:0 auto; padding:20px; }
     .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; }
-    .card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:18px; box-shadow:0 1px 4px rgba(0,0,0,.05); margin-bottom:16px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:18px; box-shadow:0 1px 4px rgba(0,0,0,.05); }
     .btn, button { display:inline-block; border:0; border-radius:16px; background:var(--accent); color:#fff; padding:16px 20px; font-weight:900; font-size:18px; text-decoration:none; cursor:pointer; }
-    .btn.secondary { background:#4e4034; }
+    .btn.secondary, button.secondary { background:#4e4034; }
     .btn.light { background:#eee3d1; color:#17120d; }
     .big-btn { width:100%; text-align:center; font-size:26px; padding:30px 18px; }
     label { display:block; font-weight:900; margin-top:14px; margin-bottom:6px; }
     input, select, textarea { width:100%; border:1px solid var(--border); border-radius:14px; padding:14px; font-size:18px; background:#fff; }
+    table { width:100%; border-collapse:collapse; background:#fff; border-radius:14px; overflow:hidden; }
+    th, td { text-align:left; padding:12px; border-bottom:1px solid var(--border); vertical-align:top; }
     .muted { color:var(--muted); }
     .flash { background:#fff6cc; border:1px solid #e6cf7a; padding:12px; border-radius:12px; margin-bottom:14px; }
     img.label-preview { max-width:100%; border:1px solid #ccc; background:#fff; }
-    .pill { background:#2d2d2d; color:#fff; padding:8px 12px; border-radius:999px; font-weight:800; }
+    .public-note { font-size:14px; color:var(--muted); }
     details summary { cursor:pointer; font-size:22px; font-weight:900; padding:12px 0; }
     .item-row { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:12px; border-top:1px solid var(--border); }
-    @media (max-width: 700px) { header { display:block; } nav { margin-top:12px; } .btn, button { width:100%; margin-top:8px; } .item-row { display:block; } }
+
+    .drawer-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.42); z-index:30; }
+    .drawer { position:fixed; top:0; left:-330px; width:320px; max-width:88vw; height:100vh; background:#17120d; color:#fff; z-index:40; transition:left .18s ease; padding:18px; overflow-y:auto; box-shadow:4px 0 18px rgba(0,0,0,.3); }
+    .drawer.open { left:0; }
+    .drawer-backdrop.open { display:block; }
+    .drawer h2 { margin:0 0 12px; }
+    .drawer-section { border-top:1px solid #3a332c; padding-top:14px; margin-top:14px; }
+    .drawer-section h3 { color:#f7df9e; font-size:14px; text-transform:uppercase; letter-spacing:.08em; margin:0 0 8px; }
+    .drawer a { display:block; color:#fff; text-decoration:none; background:#2a2420; padding:13px 14px; border-radius:12px; margin:8px 0; font-weight:800; }
+    .drawer a:hover { background:#3a332c; }
+    .drawer-close { background:#333; width:100%; margin-bottom:12px; }
+
+    .fab { position:fixed; right:22px; bottom:22px; z-index:25; width:68px; height:68px; border-radius:999px; font-size:42px; line-height:1; padding:0; box-shadow:0 8px 22px rgba(0,0,0,.28); }
+    .fab-menu { display:none; position:fixed; right:22px; bottom:100px; width:285px; max-width:calc(100vw - 44px); background:var(--card); border:1px solid var(--border); border-radius:18px; padding:12px; z-index:24; box-shadow:0 8px 26px rgba(0,0,0,.2); }
+    .fab-menu.open { display:block; }
+    .fab-menu a { display:block; text-decoration:none; margin:8px 0; }
+    .fab-menu .small-note { font-size:13px; font-weight:500; opacity:.8; display:block; margin-top:4px; }
+
+    @media (max-width: 700px) {
+      main { padding:14px; padding-bottom:110px; }
+      .user-pill { font-size:13px; padding:7px 9px; max-width:35vw; }
+      .brand { font-size:21px; }
+      .btn, button { width:100%; margin-top:8px; }
+      .item-row { display:block; }
+      table, thead, tbody, th, td, tr { display:block; }
+    }
   </style>
 </head>
 <body>
 <header>
-  <a class="brand" href="/"><svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true"><path class="logo-glass" d="M10 12h44L36 33v13l10 6H18l10-6V33L10 12z"/><path class="logo-fill" d="M18 16h28L34 29H30L18 16z"/><circle class="logo-fill" cx="47" cy="13" r="4"/></svg><span class="brand-wrap"><span>{{ brand_name }}</span><span class="build-number">BUILD v5.4b</span></span></a>
-  <nav>
+  <div class="left-head">
     {% if current_user %}
-      {% if has_permission("create_master_batch") %}<a href="/batch/new">Create Master Batch</a>{% endif %}
-      {% if has_permission("day_of_prep") %}<a href="/service-prep/new">Day of Prep</a>{% endif %}
-      {% if has_permission("bottle_existing") %}<a href="/bottle-existing">Bottle Existing</a>{% endif %}
-      {% if has_permission("scan_label") %}<a href="/scan">Scan Label</a>{% endif %}
-      {% if has_permission("custom_label") %}<a href="/custom-label">Custom Label</a>{% endif %}
-      <a href="/items">Items</a>
-      {% if has_permission("manage_users") %}<a href="/users">Users</a>{% endif %}
-      {% if has_permission("manage_permissions") %}<a href="/permissions">Permissions</a><a href="/admin/health">Health</a>{% endif %}
-      <span class="pill">{{ current_user.name }} · {{ current_user.role }}</span>
-      <a href="/logout">Logout</a>
-    {% else %}
-      <a href="/login">Staff PIN</a>
+      <button class="menu-btn" type="button" onclick="toggleDrawer(true)" aria-label="Open menu">☰</button>
     {% endif %}
-  </nav>
+    <a class="brand" href="/">
+      <svg class="logo-mark" viewBox="0 0 64 64" aria-hidden="true">
+        <path class="logo-glass" d="M10 12h44L36 33v13l10 6H18l10-6V33L10 12z"/>
+        <path class="logo-fill" d="M18 16h28L34 29H30L18 16z"/>
+        <circle class="logo-fill" cx="47" cy="13" r="4"/>
+      </svg>
+      <span class="brand-wrap"><span>{{ brand_name }}</span><span class="build-number">BUILD v5.4c</span></span>
+    </a>
+  </div>
+  {% if current_user %}
+    <div class="user-pill">{{ current_user.name }} · {{ current_user.role }}</div>
+  {% endif %}
 </header>
+
+{% if current_user %}
+<div id="drawerBackdrop" class="drawer-backdrop" onclick="toggleDrawer(false)"></div>
+<aside id="drawer" class="drawer">
+  <button class="drawer-close" onclick="toggleDrawer(false)">Close Menu</button>
+  <h2>BarPrep</h2>
+  <div class="muted" style="color:#c8bda9">{{ current_user.name }} · {{ current_user.role }}</div>
+
+  <div class="drawer-section">
+    <h3>Production</h3>
+    <a href="/">Dashboard</a>
+    {% if has_permission("scan_label") %}<a href="/scan">Scan Label</a>{% endif %}
+    {% if has_permission("create_master_batch") %}<a href="/batch/new">Create Master Batch</a>{% endif %}
+    {% if has_permission("day_of_prep") %}<a href="/service-prep/new">Day of Prep</a>{% endif %}
+    {% if has_permission("bottle_existing") %}<a href="/bottle-existing">Bottle Existing Batch</a>{% endif %}
+    {% if has_permission("custom_label") %}<a href="/custom-label">Custom Label</a>{% endif %}
+  </div>
+
+  <div class="drawer-section">
+    <h3>Management</h3>
+    <a href="/items">Items</a>
+    {% if has_permission("manage_users") %}<a href="/users">Users</a>{% endif %}
+    {% if has_permission("manage_permissions") %}<a href="/permissions">Permissions</a>{% endif %}
+    {% if has_permission("manage_permissions") %}<a href="/admin/health">Health</a>{% endif %}
+  </div>
+
+  <div class="drawer-section">
+    <h3>Account</h3>
+    <a href="/logout">Logout</a>
+  </div>
+</aside>
+
+<button class="fab" type="button" onclick="toggleFab()" aria-label="Create">+</button>
+<div id="fabMenu" class="fab-menu">
+  {% if has_permission("create_master_batch") %}
+    <a class="btn" href="/batch/new">Create Master Batch<span class="small-note">Parent batch for later bottling/use.</span></a>
+  {% endif %}
+  {% if has_permission("day_of_prep") %}
+    <a class="btn secondary" href="/service-prep/new">Day of Prep<span class="small-note">Fresh produce and non-batched prep.</span></a>
+  {% endif %}
+  {% if has_permission("bottle_existing") %}
+    <a class="btn secondary" href="/bottle-existing">Bottle Existing<span class="small-note">Create an in-use label from a master batch.</span></a>
+  {% endif %}
+  {% if has_permission("custom_label") %}
+    <a class="btn light" href="/custom-label">Custom Label<span class="small-note">One-off untracked label.</span></a>
+  {% endif %}
+</div>
+{% endif %}
+
 <main>
   {% with messages = get_flashed_messages() %}
-    {% if messages %}{% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}{% endif %}
+    {% if messages %}
+      {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+    {% endif %}
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+
+<script>
+function toggleDrawer(force) {
+  const drawer = document.getElementById("drawer");
+  const backdrop = document.getElementById("drawerBackdrop");
+  if (!drawer || !backdrop) return;
+  const open = force !== undefined ? force : !drawer.classList.contains("open");
+  drawer.classList.toggle("open", open);
+  backdrop.classList.toggle("open", open);
+}
+function toggleFab() {
+  const menu = document.getElementById("fabMenu");
+  if (!menu) return;
+  menu.classList.toggle("open");
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    toggleDrawer(false);
+    const menu = document.getElementById("fabMenu");
+    if (menu) menu.classList.remove("open");
+  }
+});
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("fabMenu");
+  const fab = document.querySelector(".fab");
+  if (menu && fab && !menu.contains(e.target) && !fab.contains(e.target)) {
+    menu.classList.remove("open");
+  }
+});
+</script>
 </body>
 </html>

@@ -125,3 +125,10 @@ PRINT_MODE=mock
 - Adds friendlier 403/404/500 error pages
 - Admin role now always has full permission fallback
 - Build number updated to v5.4b
+
+## v5.4c
+- Replaces cluttered top navigation with hamburger menu
+- Adds floating plus create menu
+- Groups navigation into Production, Management, and Account
+- Simplifies dashboard actions
+- Build number updated to v5.4c
