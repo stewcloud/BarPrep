@@ -114,3 +114,7 @@ PRINT_MODE=mock
 - Adds Admin Role Permissions page
 - Adds permission-aware navigation and route protection
 - Build number updated to v5.4
+
+## v5.4a
+- Fixes startup failure caused by permission decorator loading before helper definition
+- Build number updated to v5.4a

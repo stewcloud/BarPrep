@@ -374,6 +374,31 @@ def login_required(fn):
     return wrapper
 
 
+
+
+def has_permission(permission):
+    user = current_user()
+    if not user:
+        return False
+    row = db().execute(
+        "SELECT 1 FROM role_permissions WHERE role=? AND permission=?",
+        (user["role"], permission),
+    ).fetchone()
+    return bool(row)
+
+
+def require_permission(permission):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            if not has_permission(permission):
+                flash("You do not have permission for that action.")
+                return redirect(url_for("index"))
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def client_ip():
     return (request.headers.get("CF-Connecting-IP") or request.headers.get("X-Forwarded-For", request.remote_addr)).split(",")[0].strip()
 
