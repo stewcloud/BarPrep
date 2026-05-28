@@ -118,3 +118,10 @@ PRINT_MODE=mock
 ## v5.4a
 - Fixes startup failure caused by permission decorator loading before helper definition
 - Build number updated to v5.4a
+
+## v5.4b
+- Adds optional Emergency Admin PIN via `EMERGENCY_ADMIN_PIN`
+- Adds Admin Health page at `/admin/health`
+- Adds friendlier 403/404/500 error pages
+- Admin role now always has full permission fallback
+- Build number updated to v5.4b

@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.4b] - 2026-05-27
+### Added
+- Optional Emergency Admin PIN via `EMERGENCY_ADMIN_PIN`
+- Admin Health page
+- Friendly error pages
+
+### Changed
+- Admin role always has full permission fallback
+
+
 ## [5.4] - 2026-05-27
 ### Added
 - Admin Role Permissions page

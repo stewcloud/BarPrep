@@ -18,7 +18,8 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "5055"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v5.4"
+APP_VERSION = "v5.4b"
+EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
 MAX_PIN_ATTEMPTS = int(os.getenv("MAX_PIN_ATTEMPTS", "6"))
@@ -331,6 +332,15 @@ def init_db():
 
 
 def current_user():
+    if session.get("emergency_admin"):
+        return {
+            "id": 0,
+            "name": "Emergency Admin",
+            "role": "Admin",
+            "active": 1,
+            "is_admin": 1,
+        }
+
     uid = session.get("user_id")
     if not uid:
         return None
@@ -380,6 +390,8 @@ def has_permission(permission):
     user = current_user()
     if not user:
         return False
+    if user["role"] == "Admin":
+        return True
     row = db().execute(
         "SELECT 1 FROM role_permissions WHERE role=? AND permission=?",
         (user["role"], permission),
@@ -987,6 +999,39 @@ def export_items():
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
 
 
+
+@app.route("/admin/health")
+@login_required
+@require_permission("manage_permissions")
+def admin_health():
+    db_path = DATABASE_PATH
+    stats = {}
+    for table in ["users", "items", "batches", "service_instances", "role_permissions"]:
+        try:
+            stats[table] = db().execute(f"SELECT COUNT(*) AS c FROM {table}").fetchone()["c"]
+        except Exception as exc:
+            stats[table] = f"error: {exc}"
+
+    admins = db().execute("SELECT id, name, role, active FROM users WHERE role='Admin' OR is_admin=1 ORDER BY name").fetchall()
+    schema = {}
+    for table in ["users", "items", "batches", "service_instances", "role_permissions"]:
+        try:
+            schema[table] = db().execute(f"PRAGMA table_info({table})").fetchall()
+        except Exception:
+            schema[table] = []
+
+    return render_template(
+        "admin_health.html",
+        db_path=db_path,
+        app_version=APP_VERSION,
+        print_mode=os.getenv("PRINT_MODE", "mock"),
+        app_base_url=APP_BASE_URL,
+        emergency_admin_enabled=bool(EMERGENCY_ADMIN_PIN),
+        stats=stats,
+        admins=admins,
+        schema=schema,
+    )
+
 @app.route("/permissions", methods=["GET", "POST"])
 @login_required
 @require_permission("manage_permissions")
@@ -1053,6 +1098,22 @@ def update_user(user_id):
     db().commit()
     flash("User updated.")
     return redirect(url_for("users"))
+
+
+
+@app.errorhandler(403)
+def forbidden(error):
+    return render_template("error.html", code=403, message="You do not have permission to access this page."), 403
+
+
+@app.errorhandler(404)
+def not_found(error):
+    return render_template("error.html", code=404, message="That page or label could not be found."), 404
+
+
+@app.errorhandler(500)
+def server_error(error):
+    return render_template("error.html", code=500, message="BarPrep hit an internal error. Check Docker logs for the traceback."), 500
 
 
 if __name__ == "__main__":

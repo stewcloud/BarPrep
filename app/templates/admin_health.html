@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Admin Health</h1>
+
+<div class="grid">
+  <div class="card">
+    <h2>System</h2>
+    <p><strong>Version:</strong> {{ app_version }}</p>
+    <p><strong>Database:</strong> {{ db_path }}</p>
+    <p><strong>Base URL:</strong> {{ app_base_url }}</p>
+    <p><strong>Print Mode:</strong> {{ print_mode }}</p>
+    <p><strong>Emergency Admin PIN:</strong> {% if emergency_admin_enabled %}Enabled{% else %}Not set{% endif %}</p>
+  </div>
+
+  <div class="card">
+    <h2>Record Counts</h2>
+    {% for table, count in stats.items() %}
+      <p><strong>{{ table }}:</strong> {{ count }}</p>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Admins</h2>
+  {% for admin in admins %}
+    <p>{{ admin.name }} · {{ admin.role }} · {% if admin.active %}Active{% else %}Inactive{% endif %}</p>
+  {% else %}
+    <p class="muted">No database admin users found. Use Emergency Admin PIN if configured.</p>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>Schema</h2>
+  {% for table, cols in schema.items() %}
+    <details>
+      <summary>{{ table }}</summary>
+      <table>
+        <tr><th>Name</th><th>Type</th><th>Required</th><th>Default</th></tr>
+        {% for col in cols %}
+          <tr>
+            <td>{{ col[1] }}</td>
+            <td>{{ col[2] }}</td>
+            <td>{{ col[3] }}</td>
+            <td>{{ col[4] }}</td>
+          </tr>
+        {% endfor %}
+      </table>
+    </details>
+  {% endfor %}
+</div>
+{% endblock %}
