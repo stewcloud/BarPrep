@@ -4,7 +4,7 @@ services:
     container_name: kitchen-labels
     restart: unless-stopped
     ports:
-      - "${APP_PORT:-5055}:5055"
+      - "${APP_PORT:-8540}:8540"
     env_file:
       - .env
     volumes:

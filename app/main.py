@@ -15,10 +15,10 @@ from .printing import print_png
 load_dotenv()
 
 APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
-APP_PORT = int(os.getenv("APP_PORT", "5055"))
+APP_PORT = int(os.getenv("APP_PORT", "8540"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v5.4c"
+APP_VERSION = "v5.4d"
 EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
@@ -461,6 +461,28 @@ def logout():
     return redirect(url_for("login"))
 
 
+def recent_item_ids(workflow=None, limit=8):
+    where = ""
+    params = []
+    if workflow:
+        where = "WHERE i.prep_workflow=?"
+        params.append(workflow)
+    rows = db().execute(
+        f"""
+        SELECT i.id
+        FROM items i
+        LEFT JOIN batches b ON b.item_id = i.id
+        LEFT JOIN service_instances s ON s.item_id = i.id
+        {where}
+        GROUP BY i.id
+        ORDER BY COALESCE(MAX(b.created_at), MAX(s.created_at), '') DESC
+        LIMIT ?
+        """,
+        params + [limit],
+    ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def item_abbreviation(name):
     return "".join(word[0] for word in (name or "").upper().split() if word)
 
@@ -582,7 +604,7 @@ def new_batch():
         db().commit()
         flash(f"Created batch {batch_code}")
         return redirect(url_for("batch_detail", code=batch_code))
-    return render_template("new_batch.html", users=users, items=items, now=now_local_iso())
+    return render_template("new_batch.html", users=users, items=items, recent_item_ids=recent_item_ids("Master Batch"), now=now_local_iso())
 
 
 @app.route("/b/<code>")
@@ -773,6 +795,78 @@ def print_service(code):
 
 
 
+
+@app.route("/lookup", methods=["GET", "POST"])
+@login_required
+@require_permission("scan_label")
+def universal_lookup():
+    q = request.values.get("q", "").strip()
+    batches, services, items = [], [], []
+    if q:
+        like = f"%{q}%"
+        batches = db().execute(
+            """
+            SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+            FROM batches b
+            JOIN items i ON i.id = b.item_id
+            JOIN users u ON u.id = b.made_by_user_id
+            WHERE lower(b.batch_code) LIKE lower(?)
+               OR lower(i.name) LIKE lower(?)
+               OR lower(i.category) LIKE lower(?)
+            ORDER BY b.created_at DESC
+            LIMIT 50
+            """,
+            (like, like, like),
+        ).fetchall()
+        services = db().execute(
+            """
+            SELECT s.*, b.batch_code, i.name AS item_name, i.category, u.name AS bottled_by
+            FROM service_instances s
+            LEFT JOIN batches b ON b.id = s.batch_id
+            JOIN items i ON i.id = COALESCE(s.item_id, b.item_id)
+            JOIN users u ON u.id = s.bottled_by_user_id
+            WHERE lower(s.service_code) LIKE lower(?)
+               OR lower(COALESCE(b.batch_code, '')) LIKE lower(?)
+               OR lower(i.name) LIKE lower(?)
+               OR lower(i.category) LIKE lower(?)
+            ORDER BY s.created_at DESC
+            LIMIT 50
+            """,
+            (like, like, like, like),
+        ).fetchall()
+        items = db().execute(
+            """
+            SELECT *
+            FROM items
+            WHERE lower(name) LIKE lower(?)
+               OR lower(category) LIKE lower(?)
+            ORDER BY active DESC, category, name
+            LIMIT 50
+            """,
+            (like, like),
+        ).fetchall()
+        if len(q) <= 4:
+            abbr = q.upper()
+            batch_ids = {r["id"] for r in batches}
+            batches = list(batches) + [
+                r for r in db().execute(
+                    """
+                    SELECT b.*, i.name AS item_name, i.category, u.name AS made_by
+                    FROM batches b
+                    JOIN items i ON i.id=b.item_id
+                    JOIN users u ON u.id=b.made_by_user_id
+                    ORDER BY b.created_at DESC LIMIT 100
+                    """
+                ).fetchall()
+                if item_abbreviation(r["item_name"]) == abbr and r["id"] not in batch_ids
+            ]
+            item_ids = {r["id"] for r in items}
+            items = list(items) + [
+                r for r in db().execute("SELECT * FROM items ORDER BY active DESC, category, name LIMIT 100").fetchall()
+                if item_abbreviation(r["name"]) == abbr and r["id"] not in item_ids
+            ]
+    return render_template("lookup.html", q=q, batches=batches, services=services, items=items)
+
 @app.route("/scan/results")
 @login_required
 @require_permission("scan_label")
@@ -831,7 +925,7 @@ def scan_label():
         batch = db().execute("SELECT batch_code FROM batches WHERE lower(batch_code)=lower(?)", (value,)).fetchone()
         if batch:
             return redirect(url_for("batch_detail", code=batch["batch_code"]))
-        return redirect(url_for("scan_results", q=raw))
+        return redirect(url_for("universal_lookup", q=raw))
 
     recent_batches = db().execute("""
         SELECT b.batch_code, i.name AS item_name
@@ -875,7 +969,7 @@ def new_service_prep():
         db().commit()
         flash(f"Created day-of-prep label {service_code}")
         return redirect(url_for("service_detail", code=service_code))
-    return render_template("new_service_prep.html", users=users, items=items, now=now_local_iso())
+    return render_template("new_service_prep.html", users=users, items=items, recent_item_ids=recent_item_ids("Day of Prep"), now=now_local_iso())
 
 @app.route("/custom-label", methods=["GET", "POST"])
 @login_required
@@ -978,6 +1072,27 @@ def item_edit(item_id):
         flash("Item updated.")
         return redirect(url_for("items"))
     return render_template("item_edit.html", item=item)
+
+
+
+@app.post("/items/<int:item_id>/archive")
+@login_required
+@require_permission("manage_items")
+def archive_item(item_id):
+    db().execute("UPDATE items SET active=0 WHERE id=?", (item_id,))
+    db().commit()
+    flash("Item archived.")
+    return redirect(url_for("items"))
+
+
+@app.post("/items/<int:item_id>/restore")
+@login_required
+@require_permission("manage_items")
+def restore_item(item_id):
+    db().execute("UPDATE items SET active=1 WHERE id=?", (item_id,))
+    db().commit()
+    flash("Item restored.")
+    return redirect(url_for("items"))
 
 
 @app.get("/items/export.csv")
@@ -1118,4 +1233,5 @@ def server_error(error):
 
 if __name__ == "__main__":
     init_db()
+    print(f"Starting BarPrep {APP_VERSION} on {APP_HOST}:{APP_PORT} | BASE={APP_BASE_URL} | PRINT_MODE={os.getenv('PRINT_MODE', 'mock')}")
     app.run(host=APP_HOST, port=APP_PORT, debug=False)

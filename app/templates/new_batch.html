@@ -2,6 +2,19 @@
 {% block content %}
 <h1>Create Master Batch</h1>
 <form method="post" class="card">
+  {% if recent_item_ids %}
+  <div class="card" style="margin-bottom:16px">
+    <h2>Recent Items</h2>
+    <div class="grid">
+      {% for item in items %}
+        {% if item.id in recent_item_ids %}
+          <button type="button" class="secondary" onclick="selectItem('{{ item.category }}','{{ item.id }}')">{{ item.name }}</button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <label>Category</label>
   <select id="categorySelect" required>
     <option value="">Select category...</option>
@@ -38,6 +51,12 @@
 const categorySelect = document.getElementById("categorySelect");
 const itemSelect = document.getElementById("itemSelect");
 const allOptions = Array.from(itemSelect.querySelectorAll("option[data-category]"));
+function selectItem(category, itemId) {
+  categorySelect.value = category;
+  categorySelect.dispatchEvent(new Event("change"));
+  itemSelect.value = itemId;
+}
+
 categorySelect.addEventListener("change", () => {
   const category = categorySelect.value;
   itemSelect.innerHTML = "";

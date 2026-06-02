@@ -132,3 +132,12 @@ PRINT_MODE=mock
 - Groups navigation into Production, Management, and Account
 - Simplifies dashboard actions
 - Build number updated to v5.4c
+
+## v5.4d
+- Changes default port from 5055 to 8540
+- Adds startup log with version, port, base URL, and print mode
+- Adds Search / Lookup page with item, batch, service, and abbreviation search
+- Adds quick reprint actions from lookup results
+- Adds recent item shortcuts on creation pages
+- Adds item archive/restore actions
+- Build number updated to v5.4d

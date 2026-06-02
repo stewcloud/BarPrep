@@ -11,6 +11,14 @@
     <h2>Quick Create</h2>
     <p class="muted">Use the floating + button to create a master batch, Day of Prep label, bottle existing batch, or custom label.</p>
   </div>
+  {% if has_permission("scan_label") %}
+  <form class="card" method="get" action="/lookup">
+    <h2>Search / Lookup</h2>
+    <label>Code, item name, or abbreviation</label>
+    <input name="q" placeholder="LJ, Lime Juice, Orgeat, batch code...">
+    <button type="submit">Search</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="grid" style="margin-top:18px">

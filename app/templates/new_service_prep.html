@@ -11,8 +11,21 @@
 </div>
 {% else %}
 <form method="post" class="card">
+  {% if recent_item_ids %}
+  <div class="card" style="margin-bottom:16px">
+    <h2>Recent Items</h2>
+    <div class="grid">
+      {% for item in items %}
+        {% if item.id in recent_item_ids %}
+          <button type="button" class="secondary" onclick="document.getElementById('itemSelect').value='{{ item.id }}'">{{ item.name }}</button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <label>Item</label>
-  <select name="item_id" required>
+  <select name="item_id" id="itemSelect" required>
     {% for item in items %}
       <option value="{{ item.id }}">{{ item.category }} — {{ item.name }} / in-use {{ item.in_use_shelf_life_hours }}h</option>
     {% endfor %}

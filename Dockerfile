@@ -14,6 +14,6 @@ COPY app ./app
 
 RUN mkdir -p /app/data
 
-EXPOSE 5055
+EXPOSE 8540
 
 CMD ["python", "-m", "app.main"]

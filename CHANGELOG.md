@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.4d] - 2026-05-27
+### Added
+- Search / Lookup page
+- Quick reprint actions
+- Recent item shortcuts
+- Item archive/restore
+- Startup deployment log
+
+### Changed
+- Default port changed from 5055 to 8540
+
+
 ## [5.4c] - 2026-05-27
 ### Added
 - Hamburger navigation menu

@@ -16,7 +16,14 @@
         <strong>{{ item.name }}</strong>
         <div class="muted">{{ item.prep_workflow }} · Master {{ item.master_shelf_life_days }}d · In-use {{ item.in_use_shelf_life_hours }}h{% if item.brix_percent is not none %} · {{ item.brix_percent }}°Bx{% endif %}{% if item.abv_percent is not none %} · {{ item.abv_percent }}% ABV{% endif %}{% if not item.active %} · inactive{% endif %}</div>
       </div>
-      {% if has_permission("manage_items") %}<a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>{% endif %}
+      {% if has_permission("manage_items") %}
+        <a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>
+        {% if item.active %}
+          <form method="post" action="/items/{{ item.id }}/archive" style="display:inline"><button class="secondary" type="submit">Archive</button></form>
+        {% else %}
+          <form method="post" action="/items/{{ item.id }}/restore" style="display:inline"><button type="submit">Restore</button></form>
+        {% endif %}
+      {% endif %}
     </div>
   {% endfor %}
 </details>

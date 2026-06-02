@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Search / Lookup</h1>
+
+<form method="get" class="card">
+  <label>Search anything</label>
+  <input name="q" value="{{ q }}" placeholder="LJ, Lime Juice, Orgeat, batch code, service code...">
+  <button type="submit">Search</button>
+</form>
+
+{% if q %}
+<div class="grid">
+  <div class="card">
+    <h2>Master Batches</h2>
+    {% for b in batches %}
+      <div class="item-row">
+        <div>
+          <strong>{{ b.batch_code }}</strong>
+          <div class="muted">{{ b.item_name }} · {{ b.category }} · by {{ b.made_by }} · expires {{ b.expires_at }}</div>
+        </div>
+        <div>
+          <a class="btn light" href="/b/{{ b.batch_code }}">View</a>
+          {% if has_permission("bottle_existing") %}<a class="btn" href="/batch/{{ b.batch_code }}/bottle">Bottle</a>{% endif %}
+          <form method="post" action="/print/batch/{{ b.batch_code }}" style="display:inline"><button class="secondary" type="submit">Reprint</button></form>
+        </div>
+      </div>
+    {% else %}
+      <p class="muted">No matching batches.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Service Labels</h2>
+    {% for s in services %}
+      <div class="item-row">
+        <div>
+          <strong>{{ s.service_code }}</strong>
+          <div class="muted">{{ s.item_name }} · {% if s.batch_code %}batch {{ s.batch_code }}{% else %}Day of Prep{% endif %} · by {{ s.bottled_by }} · expires {{ s.expires_at }}</div>
+        </div>
+        <div>
+          <a class="btn light" href="/s/{{ s.service_code }}">View</a>
+          <form method="post" action="/print/service/{{ s.service_code }}" style="display:inline"><button class="secondary" type="submit">Reprint</button></form>
+        </div>
+      </div>
+    {% else %}
+      <p class="muted">No matching service labels.</p>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <h2>Items</h2>
+    {% for item in items %}
+      <div class="item-row">
+        <div>
+          <strong>{{ item.name }}</strong>
+          <div class="muted">{{ item.category }} · {{ item.prep_workflow }}{% if not item.active %} · archived{% endif %}</div>
+        </div>
+        <div>
+          {% if has_permission("manage_items") %}<a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>{% endif %}
+        </div>
+      </div>
+    {% else %}
+      <p class="muted">No matching items.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
