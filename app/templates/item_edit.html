@@ -6,6 +6,10 @@
   <label>Name</label>
   <input name="name" value="{{ item.name if item else '' }}" required>
 
+  <label>SKU / Inventory Barcode Number</label>
+  <input name="sku" inputmode="numeric" pattern="[0-9]*" value="{{ item.sku if item and item.sku else '' }}" placeholder="Auto-generated if blank">
+  <p class="muted">Numbers only. This prints as the inventory barcode at the bottom of labels.</p>
+
 
   <label>Prep Workflow</label>
   <select name="prep_workflow" id="prepWorkflow" required>

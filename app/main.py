@@ -18,7 +18,7 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8540"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v5.4d"
+APP_VERSION = "v5.5"
 EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 
 SESSION_HOURS = int(os.getenv("SESSION_HOURS", "8"))
@@ -202,6 +202,13 @@ def init_db():
     cur.execute("UPDATE items SET prep_workflow='Master Batch' WHERE prep_workflow IN ('Batch + Bottle', '', 'batch')")
     cur.execute("UPDATE items SET prep_workflow='Day of Prep' WHERE prep_workflow IN ('Direct Service', 'direct')")
 
+    if not column_exists(conn, "items", "sku"):
+        cur.execute("ALTER TABLE items ADD COLUMN sku TEXT")
+        rows = cur.execute("SELECT id FROM items ORDER BY id").fetchall()
+        for row in rows:
+            cur.execute("UPDATE items SET sku=? WHERE id=?", (f"{int(row['id']):08d}", row["id"]))
+
+
     # v5.2 service_instances safety migration
     info = conn.execute("PRAGMA table_info(service_instances)").fetchall()
     batch_col = next((c for c in info if c[1] == "batch_id"), None)
@@ -311,7 +318,7 @@ def init_db():
             cur.execute("""
                 INSERT OR IGNORE INTO service_instances_repair
                 (id, service_code, batch_id, item_id, bottled_at, bottled_by_user_id, expires_at, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row["id"], row["service_code"], batch_id, item_id,
                 row["bottled_at"], row["bottled_by_user_id"],
@@ -459,6 +466,35 @@ def logout():
     session.clear()
     flash("Signed out.")
     return redirect(url_for("login"))
+
+
+
+def normalize_sku(value):
+    return "".join(ch for ch in (value or "") if ch.isdigit())
+
+
+def next_numeric_sku():
+    rows = db().execute("SELECT sku FROM items WHERE sku IS NOT NULL AND sku != ''").fetchall()
+    nums = []
+    for row in rows:
+        sku = normalize_sku(row["sku"])
+        if sku:
+            nums.append(int(sku))
+    nxt = (max(nums) + 1) if nums else 1
+    return f"{nxt:08d}"
+
+
+def unique_sku_or_next(value, current_item_id=None):
+    sku = normalize_sku(value)
+    if not sku:
+        sku = next_numeric_sku()
+    row = db().execute(
+        "SELECT id FROM items WHERE sku=? AND (? IS NULL OR id != ?)",
+        (sku, current_item_id, current_item_id),
+    ).fetchone()
+    if row:
+        sku = next_numeric_sku()
+    return sku
 
 
 def recent_item_ids(workflow=None, limit=8):
@@ -611,7 +647,7 @@ def new_batch():
 def batch_detail(code):
     batch = db().execute(
         """
-        SELECT b.*, i.name AS item_name, i.storage, i.allergens, i.in_use_shelf_life_hours,
+        SELECT b.*, i.name AS item_name, i.sku AS item_sku, i.storage, i.allergens, i.in_use_shelf_life_hours,
                u.name AS made_by
         FROM batches b
         JOIN items i ON i.id = b.item_id
@@ -641,7 +677,7 @@ def batch_detail(code):
 def bottle_batch(code):
     batch = db().execute(
         """
-        SELECT b.*, i.name AS item_name, i.in_use_shelf_life_hours, i.storage, u.name AS made_by
+        SELECT b.*, i.name AS item_name, i.sku AS item_sku, i.in_use_shelf_life_hours, i.storage, u.name AS made_by
         FROM batches b
         JOIN items i ON i.id = b.item_id
         JOIN users u ON u.id = b.made_by_user_id
@@ -698,6 +734,7 @@ def get_service_record(code):
             b.made_at,
             b.expires_at AS batch_expires_at,
             i.name AS item_name,
+            i.sku AS item_sku,
             i.storage,
             i.allergens,
             maker.name AS made_by,
@@ -724,7 +761,7 @@ def service_detail(code):
 def load_batch_for_label(code):
     return db().execute(
         """
-        SELECT b.*, i.name AS item_name, i.storage, i.allergens, u.name AS made_by
+        SELECT b.*, i.name AS item_name, i.sku AS item_sku, i.storage, i.allergens, u.name AS made_by
         FROM batches b JOIN items i ON i.id = b.item_id JOIN users u ON u.id = b.made_by_user_id
         WHERE b.batch_code=?
         """,
@@ -735,7 +772,7 @@ def load_batch_for_label(code):
 def load_service_for_label(code):
     return db().execute(
         """
-        SELECT s.*, b.batch_code, b.made_at, i.name AS item_name, i.storage, i.allergens,
+        SELECT s.*, b.batch_code, b.made_at, i.name AS item_name, i.sku AS item_sku, i.storage, i.allergens,
                maker.name AS made_by, bottler.name AS bottled_by
         FROM service_instances s
         LEFT JOIN batches b ON b.id = s.batch_id
@@ -1018,11 +1055,12 @@ def item_new():
         db().execute(
             """
             INSERT INTO items
-            (name, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens, brix_percent, abv_percent, prep_workflow)
+            (name, sku, category, master_shelf_life_days, in_use_shelf_life_hours, storage, allergens, brix_percent, abv_percent, prep_workflow)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 request.form["name"],
+                unique_sku_or_next(request.form.get("sku")),
                 request.form.get("category", "Prep"),
                 shelf_days_from_form(),
                 shelf_hours_from_form(),
@@ -1050,12 +1088,13 @@ def item_edit(item_id):
         db().execute(
             """
             UPDATE items
-            SET name=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
+            SET name=?, sku=?, category=?, master_shelf_life_days=?, in_use_shelf_life_hours=?,
                 storage=?, allergens=?, brix_percent=?, abv_percent=?, prep_workflow=?, active=?
             WHERE id=?
             """,
             (
                 request.form["name"],
+                unique_sku_or_next(request.form.get("sku"), item_id),
                 request.form.get("category", "Prep"),
                 shelf_days_from_form(),
                 shelf_hours_from_form(),
@@ -1100,7 +1139,7 @@ def restore_item(item_id):
 def export_items():
     rows = db().execute(
         """
-        SELECT name, category, master_shelf_life_days, in_use_shelf_life_hours,
+        SELECT name, sku, category, master_shelf_life_days, in_use_shelf_life_hours,
                storage, allergens, brix_percent, abv_percent, prep_workflow, active
         FROM items
         ORDER BY category, name
@@ -1108,9 +1147,9 @@ def export_items():
     ).fetchall()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["name", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "brix_percent", "abv_percent", "prep_workflow", "active"])
+    writer.writerow(["name", "sku", "category", "master_shelf_life_days", "in_use_shelf_life_hours", "storage", "allergens", "brix_percent", "abv_percent", "prep_workflow", "active"])
     for r in rows:
-        writer.writerow([r["name"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["brix_percent"], r["abv_percent"], r["prep_workflow"], r["active"]])
+        writer.writerow([r["name"], r["sku"], r["category"], r["master_shelf_life_days"], r["in_use_shelf_life_hours"], r["storage"], r["allergens"], r["brix_percent"], r["abv_percent"], r["prep_workflow"], r["active"]])
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=barprep_items.csv"})
 
 

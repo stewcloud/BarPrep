@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.5] - 2026-05-27
+### Added
+- Numeric-only SKU field on Items
+- Auto-generated SKU values
+- Bottom Code 128 SKU barcode on labels
+- SKU display on item/search pages
+
+### Changed
+- Label layout keeps QR in current position and adds SKU barcode as bottom line
+
+
 ## [5.4d] - 2026-05-27
 ### Added
 - Search / Lookup page

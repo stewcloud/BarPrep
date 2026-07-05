@@ -53,7 +53,7 @@
       <div class="item-row">
         <div>
           <strong>{{ item.name }}</strong>
-          <div class="muted">{{ item.category }} · {{ item.prep_workflow }}{% if not item.active %} · archived{% endif %}</div>
+          <div class="muted">SKU: {{ item.sku or "Auto" }} · {{ item.category }} · {{ item.prep_workflow }}{% if not item.active %} · archived{% endif %}</div>
         </div>
         <div>
           {% if has_permission("manage_items") %}<a class="btn light" href="/items/{{ item.id }}/edit">Edit</a>{% endif %}

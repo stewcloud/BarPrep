@@ -141,3 +141,11 @@ PRINT_MODE=mock
 - Adds recent item shortcuts on creation pages
 - Adds item archive/restore actions
 - Build number updated to v5.4d
+
+## v5.5
+- Adds numeric-only SKU field to Items
+- Auto-generates numeric SKU values for existing and new items
+- Adds Code 128 SKU barcode to the bottom line of master and service labels
+- Keeps QR code in the approved current position for public label lookup
+- SKU can be used by external inventory systems without vendor prefixes
+- Build number updated to v5.5
