@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.6] - 2026-07-05
+### Changed
+- Rewrote label renderer with Header, QR, Details, and SKU Footer regions
+- Improved compact label sizing
+- SKU barcode now owns a full-width footer
+
+### Fixed
+- Text truncation caused by QR stealing layout width
+- SKU barcode being squeezed to the lower-right
+
+
 ## [5.5d] - 2026-07-05
 ### Changed
 - Dynamic compact label height

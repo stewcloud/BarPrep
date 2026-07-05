@@ -176,3 +176,11 @@ PRINT_MODE=mock
 - Keeps QR code visible and right-positioned
 - Keeps SKU barcode compact in the bottom footer
 - Build number updated to v5.5d
+
+## v5.6
+- Rewrites label renderer around layout regions instead of fixed coordinates
+- Keeps title readable while reserving QR region
+- Uses full label width for detail lines below QR area
+- Adds dedicated full-width SKU footer
+- Preserves compact 62mm continuous-roll utility label style
+- Build number updated to v5.6
