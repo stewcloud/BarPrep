@@ -149,3 +149,9 @@ PRINT_MODE=mock
 - Keeps QR code in the approved current position for public label lookup
 - SKU can be used by external inventory systems without vendor prefixes
 - Build number updated to v5.5
+
+## v5.5a
+- Fixes Pillow ANTIALIAS print failure
+- Fixes clipped SKU label preview layout
+- Keeps QR top-right and SKU barcode on bottom line
+- Build number updated to v5.5a

@@ -1,5 +1,11 @@
 # Changelog
 
+## [5.5a] - 2026-07-05
+### Fixed
+- Pillow ANTIALIAS print failure
+- Clipped SKU barcode preview layout
+
+
 ## [5.5] - 2026-05-27
 ### Added
 - Numeric-only SKU field on Items
