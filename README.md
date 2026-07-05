@@ -168,3 +168,11 @@ PRINT_MODE=mock
 - Adds SKU barcode as a small isolated footer instead of overlapping content
 - Keeps Pillow/brother_ql print compatibility
 - Build number updated to v5.5c
+
+## v5.5d
+- Polishes label scale and cut length
+- Uses dynamic compact label height, targeting roughly 1.25–1.5 inches when possible
+- Uses full roll width more efficiently
+- Keeps QR code visible and right-positioned
+- Keeps SKU barcode compact in the bottom footer
+- Build number updated to v5.5d

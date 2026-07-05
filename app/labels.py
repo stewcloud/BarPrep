@@ -18,7 +18,7 @@ except AttributeError:
 import qrcode
 
 # Compact 62mm continuous label canvas. Lower height = less paper used.
-W, H = 334, 300
+W, H = 260, 300
 
 
 def font(size, bold=False):
@@ -104,27 +104,6 @@ def draw_code128(draw, data, x, y, width, height):
             bar = not bar
 
 
-def draw_sku_footer(draw, sku):
-    sku = "".join(ch for ch in str(sku or "") if ch.isdigit())
-    if not sku:
-        return
-
-    # Small isolated footer. Content above must not enter this zone.
-    footer_top = H - 58
-    draw.line((0, footer_top, W, footer_top), fill=0, width=2)
-
-    barcode_y = footer_top + 8
-    barcode_h = 25
-    draw_code128(draw, sku, 150, barcode_y, W - 300, barcode_h)
-
-    try:
-        bbox = draw.textbbox((0, 0), sku, font=F_SMALL)
-        tw = bbox[2] - bbox[0]
-    except Exception:
-        tw = len(sku) * 10
-    draw.text(((W - tw) // 2, barcode_y + barcode_h + 2), sku, font=F_SMALL, fill=0)
-
-
 
 def fmt_dt(value):
     if not value or value == "INFINITE":
@@ -168,87 +147,113 @@ def base_canvas(height=H):
     return img, draw
 
 
+
+def dynamic_canvas(height):
+    img = Image.new("1", (W, height), 1)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((4, 4, W - 5, height - 5), outline=0, width=2)
+    return img, draw
+
+def text_width(draw, text, font):
+    try:
+        b = draw.textbbox((0, 0), str(text), font=font)
+        return b[2] - b[0]
+    except Exception:
+        return len(str(text)) * 10
+
+def draw_fit_text(draw, text, xy, max_width, font, fill=0):
+    text = str(text or "")
+    if text_width(draw, text, font) <= max_width:
+        draw.text(xy, text, font=font, fill=fill)
+        return
+    ell = "…"
+    while text and text_width(draw, text + ell, font) > max_width:
+        text = text[:-1]
+    draw.text(xy, text + ell, font=font, fill=fill)
+
+def compact_sku_footer(draw, sku, y):
+    sku = "".join(ch for ch in str(sku or "") if ch.isdigit())
+    if not sku:
+        return
+    draw.line((4, y, W - 5, y), fill=0, width=1)
+    barcode_y = y + 7
+    barcode_h = 24
+    draw_code128(draw, sku, 230, barcode_y, W - 460, barcode_h)
+    tw = text_width(draw, sku, F_SMALL)
+    draw.text(((W - tw) // 2, barcode_y + barcode_h + 1), sku, font=F_SMALL, fill=0)
+
+def label_height(has_allergens=False, extra_line=False):
+    h = 244
+    if has_allergens:
+        h += 22
+    if extra_line:
+        h += 16
+    return min(max(h, 244), 292)
+
+
 def render_batch_label(batch, url):
-    img, draw = base_canvas()
-    qr = make_qr(url)
-
-    # QR restored to the original utility-label position.
-    img.paste(qr, (574, 14))
-
-    # Main content area mirrors the proven utility label layout.
-    draw_wrapped(draw, row_get(batch, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
-
-    y = 86
-    draw.text((16, y), "MASTER BATCH", font=F_MED, fill=0)
-    y += 34
-
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", font=F_EXPIRE, fill=0)
-    y += 44
-
-    draw.text((16, y), f"Batch: {row_get(batch, 'batch_code', '')}", font=F_BODY, fill=0)
-    y += 23
-
-    draw.text((16, y), f"Made: {fmt_dt(row_get(batch, 'made_at'))} by {row_get(batch, 'made_by', '')}", font=F_BODY, fill=0)
-    y += 23
-
-    draw.text((16, y), row_get(batch, "storage", ""), font=F_BODY, fill=0)
-    y += 23
-
     allergens = row_get(batch, "allergens", "")
+    h = label_height(bool(allergens), False)
+    img, draw = dynamic_canvas(h)
+
+    qr = make_qr(url).resize((98, 98), RESAMPLE_FILTER)
+    img.paste(qr, (W - 118, 16))
+
+    left = 18
+    text_w = (W - 130) - left - 8
+    draw_fit_text(draw, row_get(batch, "item_name", "ITEM").upper(), (left, 14), text_w, F_TITLE)
+
+    y = 72
+    draw.text((left, y), "MASTER BATCH", font=F_MED, fill=0); y += 31
+    draw_fit_text(draw, f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", (left, y), text_w, F_EXPIRE); y += 42
+    draw_fit_text(draw, f"Batch: {row_get(batch, 'batch_code', '')}", (left, y), W - 40, F_BODY); y += 22
+    draw_fit_text(draw, f"Made: {fmt_dt(row_get(batch, 'made_at'))} by {row_get(batch, 'made_by', '')}", (left, y), W - 40, F_BODY); y += 22
+    draw_fit_text(draw, row_get(batch, "storage", ""), (left, y), W - 40, F_BODY); y += 22
     if allergens:
-        draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
+        draw_fit_text(draw, f"Allergens: {allergens}", (left, y), W - 40, F_BODY)
 
-    draw.text((580, 124), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 144), "BATCH", font=F_SMALL, fill=0)
-
-    draw_sku_footer(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")))
+    draw.text((W - 105, 118), "SCAN", font=F_SMALL, fill=0)
+    draw.text((W - 105, 137), "BATCH", font=F_SMALL, fill=0)
+    compact_sku_footer(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")), h - 56)
     return img
+
 
 
 
 
 
 def render_service_label(service, url):
-    img, draw = base_canvas()
-    qr = make_qr(url)
-
-    # QR restored to the original utility-label position.
-    img.paste(qr, (574, 14))
-
-    draw_wrapped(draw, row_get(service, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
-
-    y = 86
-    label_type = "IN USE" if row_get(service, "batch_code") else "DAY OF PREP"
-    draw.text((16, y), label_type, font=F_MED, fill=0)
-    y += 34
-
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0)
-    y += 44
-
-    if row_get(service, "batch_code"):
-        draw.text((16, y), f"Batch: {row_get(service, 'batch_code', '')}", font=F_BODY, fill=0)
-        y += 23
-        if row_get(service, "made_at"):
-            draw.text((16, y), f"Made: {fmt_dt(row_get(service, 'made_at'))} by {row_get(service, 'made_by', '')}", font=F_BODY, fill=0)
-            y += 23
-        draw.text((16, y), f"Bottled: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0)
-        y += 23
-    else:
-        draw.text((16, y), f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0)
-        y += 23
-
-    draw.text((16, y), row_get(service, "storage", ""), font=F_BODY, fill=0)
-    y += 23
-
     allergens = row_get(service, "allergens", "")
+    is_from_batch = bool(row_get(service, "batch_code"))
+    h = label_height(bool(allergens), is_from_batch)
+    img, draw = dynamic_canvas(h)
+
+    qr = make_qr(url).resize((98, 98), RESAMPLE_FILTER)
+    img.paste(qr, (W - 118, 16))
+
+    left = 18
+    text_w = (W - 130) - left - 8
+    draw_fit_text(draw, row_get(service, "item_name", "ITEM").upper(), (left, 14), text_w, F_TITLE)
+
+    y = 72
+    draw.text((left, y), "IN USE" if is_from_batch else "DAY OF PREP", font=F_MED, fill=0); y += 31
+    draw_fit_text(draw, f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", (left, y), text_w, F_EXPIRE); y += 42
+
+    if is_from_batch:
+        draw_fit_text(draw, f"Batch: {row_get(service, 'batch_code', '')}", (left, y), W - 40, F_BODY); y += 22
+        draw_fit_text(draw, f"Bottled: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", (left, y), W - 40, F_BODY); y += 22
+    else:
+        draw_fit_text(draw, f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", (left, y), W - 40, F_BODY); y += 22
+
+    draw_fit_text(draw, row_get(service, "storage", ""), (left, y), W - 40, F_BODY); y += 22
     if allergens:
-        draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
+        draw_fit_text(draw, f"Allergens: {allergens}", (left, y), W - 40, F_BODY)
 
-    draw.text((580, 124), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 144), "LABEL", font=F_SMALL, fill=0)
-
-    draw_sku_footer(draw, row_get(service, "item_sku", row_get(service, "sku", "")))
+    draw.text((W - 105, 118), "SCAN", font=F_SMALL, fill=0)
+    draw.text((W - 105, 137), "LABEL", font=F_SMALL, fill=0)
+    compact_sku_footer(draw, row_get(service, "item_sku", row_get(service, "sku", "")), h - 56)
     return img
+
 
 
 

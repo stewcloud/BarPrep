@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.5d] - 2026-07-05
+### Changed
+- Dynamic compact label height
+- Better use of full 62mm roll width
+- Smaller right-positioned QR code
+- Smaller centered SKU barcode footer
+
+### Fixed
+- Labels printing too tall after SKU barcode addition
+
+
 ## [5.5c] - 2026-07-05
 ### Fixed
 - Restored missing QR code
