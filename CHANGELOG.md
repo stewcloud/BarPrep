@@ -1,5 +1,14 @@
 # Changelog
 
+## [5.5b] - 2026-07-05
+### Fixed
+- Remaining Pillow `Image.ANTIALIAS` print failure from brother_ql dependency
+- SKU barcode overlapping label text
+
+### Changed
+- SKU barcode now uses a dedicated bottom strip
+
+
 ## [5.5a] - 2026-07-05
 ### Fixed
 - Pillow ANTIALIAS print failure

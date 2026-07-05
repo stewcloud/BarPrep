@@ -1,6 +1,15 @@
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
+# PILLOW_ANTIALIAS_COMPAT: Pillow 10 removed Image.ANTIALIAS, but brother_ql still references it.
+try:
+    from PIL import Image as _PIL_Image
+    if not hasattr(_PIL_Image, "ANTIALIAS"):
+        _PIL_Image.ANTIALIAS = _PIL_Image.Resampling.LANCZOS
+except Exception:
+    pass
+
+
 try:
     RESAMPLE_FILTER = Image.Resampling.LANCZOS
 except AttributeError:
@@ -9,7 +18,7 @@ except AttributeError:
 import qrcode
 
 # Compact 62mm continuous label canvas. Lower height = less paper used.
-W, H = 360, 300
+W, H = 420, 300
 
 
 def font(size, bold=False):
@@ -92,14 +101,15 @@ def draw_sku_barcode(draw, sku, y):
     sku = "".join(ch for ch in str(sku or "") if ch.isdigit())
     if not sku:
         return
-    draw.line((0, y - 8, W, y - 8), fill=0, width=2)
-    draw_code128(draw, sku, 90, y, W - 180, 42)
+    # Dedicated final-line SKU zone, separated from utility label content.
+    draw.line((0, y - 10, W, y - 10), fill=0, width=2)
+    draw_code128(draw, sku, 145, y + 2, W - 290, 46)
     try:
         bbox = draw.textbbox((0, 0), sku, font=F_SMALL)
         tw = bbox[2] - bbox[0]
     except Exception:
         tw = len(sku) * 10
-    draw.text(((W - tw) // 2, y + 45), sku, font=F_SMALL, fill=0)
+    draw.text(((W - tw) // 2, y + 51), sku, font=F_SMALL, fill=0)
 
 
 def fmt_dt(value):
@@ -147,38 +157,42 @@ def base_canvas(height=H):
 def render_batch_label(batch, url):
     img, draw = base_canvas()
     qr = make_qr(url)
-    img.paste(qr, (574, 12))
+    img.paste(qr, (574, 14))
 
-    draw_wrapped(draw, row_get(batch, "item_name", "ITEM").upper(), (16, 10), 540, F_TITLE, max_lines=1)
+    draw_wrapped(draw, row_get(batch, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
 
-    y = 78
-    draw.text((16, y), "MASTER BATCH", font=F_MED, fill=0); y += 34
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 48
+    y = 86
+    draw.text((16, y), "MASTER BATCH", font=F_MED, fill=0); y += 36
+    draw.text((16, y), f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 50
+
     draw.text((16, y), f"Batch: {row_get(batch, 'batch_code', '')}", font=F_BODY, fill=0); y += 25
     draw.text((16, y), f"Made: {fmt_dt(row_get(batch, 'made_at'))} by {row_get(batch, 'made_by', '')}", font=F_BODY, fill=0); y += 25
     draw.text((16, y), row_get(batch, "storage", ""), font=F_BODY, fill=0); y += 25
+
     allergens = row_get(batch, "allergens", "")
     if allergens:
         draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
 
-    draw.text((580, 122), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 142), "BATCH", font=F_SMALL, fill=0)
-    draw_sku_barcode(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")), H - 72)
+    draw.text((580, 126), "SCAN", font=F_SMALL, fill=0)
+    draw.text((580, 146), "BATCH", font=F_SMALL, fill=0)
+
+    draw_sku_barcode(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")), H - 84)
     return img
+
 
 
 
 def render_service_label(service, url):
     img, draw = base_canvas()
     qr = make_qr(url)
-    img.paste(qr, (574, 12))
+    img.paste(qr, (574, 14))
 
-    draw_wrapped(draw, row_get(service, "item_name", "ITEM").upper(), (16, 10), 540, F_TITLE, max_lines=1)
+    draw_wrapped(draw, row_get(service, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
 
-    y = 78
+    y = 86
     label_type = "IN USE" if row_get(service, "batch_code") else "DAY OF PREP"
-    draw.text((16, y), label_type, font=F_MED, fill=0); y += 34
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 48
+    draw.text((16, y), label_type, font=F_MED, fill=0); y += 36
+    draw.text((16, y), f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 50
 
     if row_get(service, "batch_code"):
         draw.text((16, y), f"Batch: {row_get(service, 'batch_code', '')}", font=F_BODY, fill=0); y += 25
@@ -189,14 +203,17 @@ def render_service_label(service, url):
         draw.text((16, y), f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0); y += 25
 
     draw.text((16, y), row_get(service, "storage", ""), font=F_BODY, fill=0); y += 25
+
     allergens = row_get(service, "allergens", "")
     if allergens:
         draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
 
-    draw.text((580, 122), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 142), "LABEL", font=F_SMALL, fill=0)
-    draw_sku_barcode(draw, row_get(service, "item_sku", row_get(service, "sku", "")), H - 72)
+    draw.text((580, 126), "SCAN", font=F_SMALL, fill=0)
+    draw.text((580, 146), "LABEL", font=F_SMALL, fill=0)
+
+    draw_sku_barcode(draw, row_get(service, "item_sku", row_get(service, "sku", "")), H - 84)
     return img
+
 
 
 

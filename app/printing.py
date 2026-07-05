@@ -2,6 +2,15 @@ import os
 import tempfile
 from PIL import Image
 
+# PILLOW_ANTIALIAS_COMPAT: Pillow 10 removed Image.ANTIALIAS, but brother_ql still references it.
+try:
+    from PIL import Image as _PIL_Image
+    if not hasattr(_PIL_Image, "ANTIALIAS"):
+        _PIL_Image.ANTIALIAS = _PIL_Image.Resampling.LANCZOS
+except Exception:
+    pass
+
+
 PRINT_MODE = os.getenv("PRINT_MODE", "mock")
 BROTHER_MODEL = os.getenv("BROTHER_MODEL", "QL-820NWB")
 BROTHER_PRINTER = os.getenv("BROTHER_PRINTER", "tcp://192.168.1.156:9100")

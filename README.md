@@ -155,3 +155,9 @@ PRINT_MODE=mock
 - Fixes clipped SKU label preview layout
 - Keeps QR top-right and SKU barcode on bottom line
 - Build number updated to v5.5a
+
+## v5.5b
+- Adds Pillow ANTIALIAS compatibility monkeypatch for brother_ql printing
+- Moves SKU barcode into a dedicated bottom zone
+- Increases label canvas height to prevent barcode/text overlap
+- Build number updated to v5.5b
