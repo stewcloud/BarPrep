@@ -161,3 +161,10 @@ PRINT_MODE=mock
 - Moves SKU barcode into a dedicated bottom zone
 - Increases label canvas height to prevent barcode/text overlap
 - Build number updated to v5.5b
+
+## v5.5c
+- Restores QR code to the proven top-right utility label position
+- Restores compact v5.4-style label geometry
+- Adds SKU barcode as a small isolated footer instead of overlapping content
+- Keeps Pillow/brother_ql print compatibility
+- Build number updated to v5.5c

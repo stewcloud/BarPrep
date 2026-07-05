@@ -1,11 +1,11 @@
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 
-# PILLOW_ANTIALIAS_COMPAT: Pillow 10 removed Image.ANTIALIAS, but brother_ql still references it.
+# PILLOW_ANTIALIAS_COMPAT: Pillow 10 removed RESAMPLE_FILTER, but brother_ql still references it.
 try:
     from PIL import Image as _PIL_Image
     if not hasattr(_PIL_Image, "ANTIALIAS"):
-        _PIL_Image.ANTIALIAS = _PIL_Image.Resampling.LANCZOS
+        _PIL_RESAMPLE_FILTER = _PIL_Image.Resampling.LANCZOS
 except Exception:
     pass
 
@@ -18,7 +18,7 @@ except AttributeError:
 import qrcode
 
 # Compact 62mm continuous label canvas. Lower height = less paper used.
-W, H = 420, 300
+W, H = 334, 300
 
 
 def font(size, bold=False):
@@ -64,9 +64,13 @@ CODE128_PATTERNS = [
 "114131","311141","411131","211412","211214","211232","2331112"
 ]
 
+
+
+
+
 def code128_b_values(data):
     data = str(data or "")
-    vals = [104]
+    vals = [104]  # Start Code B
     checksum = 104
     for idx, ch in enumerate(data, start=1):
         o = ord(ch)
@@ -76,8 +80,9 @@ def code128_b_values(data):
         vals.append(val)
         checksum += val * idx
     vals.append(checksum % 103)
-    vals.append(106)
+    vals.append(106)  # Stop
     return vals
+
 
 def draw_code128(draw, data, x, y, width, height):
     data = str(data or "")
@@ -88,6 +93,7 @@ def draw_code128(draw, data, x, y, width, height):
     module_w = max(1, int(width / modules))
     actual_w = modules * module_w
     pos = x + max(0, (width - actual_w) // 2)
+
     for v in vals:
         bar = True
         for n in CODE128_PATTERNS[v]:
@@ -97,19 +103,27 @@ def draw_code128(draw, data, x, y, width, height):
             pos += w
             bar = not bar
 
-def draw_sku_barcode(draw, sku, y):
+
+def draw_sku_footer(draw, sku):
     sku = "".join(ch for ch in str(sku or "") if ch.isdigit())
     if not sku:
         return
-    # Dedicated final-line SKU zone, separated from utility label content.
-    draw.line((0, y - 10, W, y - 10), fill=0, width=2)
-    draw_code128(draw, sku, 145, y + 2, W - 290, 46)
+
+    # Small isolated footer. Content above must not enter this zone.
+    footer_top = H - 58
+    draw.line((0, footer_top, W, footer_top), fill=0, width=2)
+
+    barcode_y = footer_top + 8
+    barcode_h = 25
+    draw_code128(draw, sku, 150, barcode_y, W - 300, barcode_h)
+
     try:
         bbox = draw.textbbox((0, 0), sku, font=F_SMALL)
         tw = bbox[2] - bbox[0]
     except Exception:
         tw = len(sku) * 10
-    draw.text(((W - tw) // 2, y + 51), sku, font=F_SMALL, fill=0)
+    draw.text(((W - tw) // 2, barcode_y + barcode_h + 2), sku, font=F_SMALL, fill=0)
+
 
 
 def fmt_dt(value):
@@ -157,27 +171,39 @@ def base_canvas(height=H):
 def render_batch_label(batch, url):
     img, draw = base_canvas()
     qr = make_qr(url)
+
+    # QR restored to the original utility-label position.
     img.paste(qr, (574, 14))
 
+    # Main content area mirrors the proven utility label layout.
     draw_wrapped(draw, row_get(batch, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
 
     y = 86
-    draw.text((16, y), "MASTER BATCH", font=F_MED, fill=0); y += 36
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 50
+    draw.text((16, y), "MASTER BATCH", font=F_MED, fill=0)
+    y += 34
 
-    draw.text((16, y), f"Batch: {row_get(batch, 'batch_code', '')}", font=F_BODY, fill=0); y += 25
-    draw.text((16, y), f"Made: {fmt_dt(row_get(batch, 'made_at'))} by {row_get(batch, 'made_by', '')}", font=F_BODY, fill=0); y += 25
-    draw.text((16, y), row_get(batch, "storage", ""), font=F_BODY, fill=0); y += 25
+    draw.text((16, y), f"USE BY: {fmt_dt(row_get(batch, 'expires_at'))}", font=F_EXPIRE, fill=0)
+    y += 44
+
+    draw.text((16, y), f"Batch: {row_get(batch, 'batch_code', '')}", font=F_BODY, fill=0)
+    y += 23
+
+    draw.text((16, y), f"Made: {fmt_dt(row_get(batch, 'made_at'))} by {row_get(batch, 'made_by', '')}", font=F_BODY, fill=0)
+    y += 23
+
+    draw.text((16, y), row_get(batch, "storage", ""), font=F_BODY, fill=0)
+    y += 23
 
     allergens = row_get(batch, "allergens", "")
     if allergens:
         draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
 
-    draw.text((580, 126), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 146), "BATCH", font=F_SMALL, fill=0)
+    draw.text((580, 124), "SCAN", font=F_SMALL, fill=0)
+    draw.text((580, 144), "BATCH", font=F_SMALL, fill=0)
 
-    draw_sku_barcode(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")), H - 84)
+    draw_sku_footer(draw, row_get(batch, "item_sku", row_get(batch, "sku", "")))
     return img
+
 
 
 
@@ -185,34 +211,45 @@ def render_batch_label(batch, url):
 def render_service_label(service, url):
     img, draw = base_canvas()
     qr = make_qr(url)
+
+    # QR restored to the original utility-label position.
     img.paste(qr, (574, 14))
 
     draw_wrapped(draw, row_get(service, "item_name", "ITEM").upper(), (16, 12), 535, F_TITLE, max_lines=1)
 
     y = 86
     label_type = "IN USE" if row_get(service, "batch_code") else "DAY OF PREP"
-    draw.text((16, y), label_type, font=F_MED, fill=0); y += 36
-    draw.text((16, y), f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0); y += 50
+    draw.text((16, y), label_type, font=F_MED, fill=0)
+    y += 34
+
+    draw.text((16, y), f"USE BY: {fmt_dt(row_get(service, 'expires_at'))}", font=F_EXPIRE, fill=0)
+    y += 44
 
     if row_get(service, "batch_code"):
-        draw.text((16, y), f"Batch: {row_get(service, 'batch_code', '')}", font=F_BODY, fill=0); y += 25
+        draw.text((16, y), f"Batch: {row_get(service, 'batch_code', '')}", font=F_BODY, fill=0)
+        y += 23
         if row_get(service, "made_at"):
-            draw.text((16, y), f"Made: {fmt_dt(row_get(service, 'made_at'))} by {row_get(service, 'made_by', '')}", font=F_BODY, fill=0); y += 25
-        draw.text((16, y), f"Bottled: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0); y += 25
+            draw.text((16, y), f"Made: {fmt_dt(row_get(service, 'made_at'))} by {row_get(service, 'made_by', '')}", font=F_BODY, fill=0)
+            y += 23
+        draw.text((16, y), f"Bottled: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0)
+        y += 23
     else:
-        draw.text((16, y), f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0); y += 25
+        draw.text((16, y), f"Prepped: {fmt_dt(row_get(service, 'bottled_at'))} by {row_get(service, 'bottled_by', '')}", font=F_BODY, fill=0)
+        y += 23
 
-    draw.text((16, y), row_get(service, "storage", ""), font=F_BODY, fill=0); y += 25
+    draw.text((16, y), row_get(service, "storage", ""), font=F_BODY, fill=0)
+    y += 23
 
     allergens = row_get(service, "allergens", "")
     if allergens:
         draw.text((16, y), f"Allergens: {allergens}", font=F_BODY, fill=0)
 
-    draw.text((580, 126), "SCAN", font=F_SMALL, fill=0)
-    draw.text((580, 146), "LABEL", font=F_SMALL, fill=0)
+    draw.text((580, 124), "SCAN", font=F_SMALL, fill=0)
+    draw.text((580, 144), "LABEL", font=F_SMALL, fill=0)
 
-    draw_sku_barcode(draw, row_get(service, "item_sku", row_get(service, "sku", "")), H - 84)
+    draw_sku_footer(draw, row_get(service, "item_sku", row_get(service, "sku", "")))
     return img
+
 
 
 

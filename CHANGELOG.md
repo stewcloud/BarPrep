@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.5c] - 2026-07-05
+### Fixed
+- Restored missing QR code
+- Fixed label scale/geometry regression
+- Prevented SKU barcode from overlapping text
+
+### Changed
+- SKU barcode is now a compact footer overlay under the proven utility label layout
+
+
 ## [5.5b] - 2026-07-05
 ### Fixed
 - Remaining Pillow `Image.ANTIALIAS` print failure from brother_ql dependency
