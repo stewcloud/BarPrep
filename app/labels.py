@@ -59,6 +59,19 @@ CODE128_PATTERNS = [
 ]
 
 
+
+def make_qr(data):
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=4,
+        border=1,
+    )
+    qr.add_data(str(data or ""))
+    qr.make(fit=True)
+    return qr.make_image(fill_color="black", back_color="white").convert("1")
+
+
 def row_get(row, key, default=None):
     try:
         value = row[key]

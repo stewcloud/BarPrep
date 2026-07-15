@@ -192,3 +192,8 @@ PRINT_MODE=mock
 - Shorter readable date format on labels
 - Dedicated full-width SKU footer
 - Build number updated to v7.0
+
+## v6.0a
+- Fixes missing make_qr helper
+- Fixes label preview and printing HTTP 500 errors
+- Corrects displayed build numbering from v7.0 to v6.0a

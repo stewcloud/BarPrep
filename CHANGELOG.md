@@ -1,5 +1,12 @@
 # Changelog
 
+## [6.0a] - 2026-07-15
+### Fixed
+- Restored missing `make_qr()` helper
+- Fixed label preview/print HTTP 500 errors
+- Corrected build numbering from v7.0 to v6.0a
+
+
 ## [7.0] - 2026-07-05
 ### Added
 - Production Label Engine
