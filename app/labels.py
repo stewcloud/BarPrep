@@ -41,14 +41,8 @@ F_BODY = font(20)
 F_SMALL = font(16)
 
 
-def row_get(row, key, default=None):
-    try:
-        value = row[key]
-        return default if value is None else value
-    except Exception:
-        return default
 
-
+W = 696
 
 CODE128_PATTERNS = [
 "212222","222122","222221","121223","121322","131222","122213","122312","132212","221213",
@@ -65,64 +59,28 @@ CODE128_PATTERNS = [
 ]
 
 
-
-
-
+def row_get(row, key, default=None):
+    try:
+        value = row[key]
+        return default if value is None else value
+    except Exception:
+        return default
 
 
 def fmt_dt(value):
     if not value or value == "INFINITE":
         return "NO EXPIRATION"
-    dt = datetime.fromisoformat(value)
-    return dt.strftime("%m/%d %I:%M %p").lstrip("0").replace(" 0", " ")
-
-
-def draw_wrapped(draw, text, xy, max_width, font_obj, fill=0, line_gap=2, max_lines=2):
-    x, y = xy
-    words = str(text).split()
-    lines = []
-    current = ""
-    for word in words:
-        test = (current + " " + word).strip()
-        if draw.textbbox((0, 0), test, font=font_obj)[2] <= max_width:
-            current = test
-        else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    for line in lines[:max_lines]:
-        draw.text((x, y), line, font=font_obj, fill=fill)
-        y += font_obj.size + line_gap
-    return y
-
-
-def make_qr(url):
-    qr = qrcode.QRCode(version=None, box_size=4, border=1)
-    qr.add_data(url)
-    qr.make(fit=True)
-    return qr.make_image(fill_color="black", back_color="white").convert("1").resize((104, 104))
-
-
-def base_canvas(height=H):
-    img = Image.new("1", (W, height), 1)
-    draw = ImageDraw.Draw(img)
-    draw.rectangle((0, 0, W - 1, height - 1), outline=0, width=2)
-    return img, draw
-
-
-
-
-
-
+    try:
+        dt = datetime.fromisoformat(value)
+        return dt.strftime("%-m/%-d %-I:%M %p")
+    except Exception:
+        return str(value)
 
 
 def code128_b_values(data):
-    data = str(data or "")
     vals = [104]
     checksum = 104
-    for idx, ch in enumerate(data, start=1):
+    for idx, ch in enumerate(str(data or ""), start=1):
         o = ord(ch)
         if o < 32 or o > 126:
             o = ord("?")
@@ -135,9 +93,6 @@ def code128_b_values(data):
 
 
 def draw_code128(draw, data, x, y, width, height):
-    data = str(data or "")
-    if not data:
-        return
     vals = code128_b_values(data)
     modules = sum(sum(int(n) for n in CODE128_PATTERNS[v]) for v in vals)
     module_w = max(1, int(width / modules))
@@ -153,23 +108,54 @@ def draw_code128(draw, data, x, y, width, height):
             bar = not bar
 
 
-def row_text_width(draw, text, font):
+def measure(draw, text, font):
     try:
         box = draw.textbbox((0, 0), str(text), font=font)
-        return box[2] - box[0]
+        return box[2] - box[0], box[3] - box[1]
     except Exception:
-        return len(str(text)) * 10
+        return len(str(text)) * 10, 20
 
 
 def fit_text(draw, text, xy, max_width, font, fill=0):
     text = str(text or "")
-    if row_text_width(draw, text, font) <= max_width:
+    if measure(draw, text, font)[0] <= max_width:
         draw.text(xy, text, font=font, fill=fill)
         return
     ell = "..."
-    while text and row_text_width(draw, text + ell, font) > max_width:
+    while text and measure(draw, text + ell, font)[0] > max_width:
         text = text[:-1]
     draw.text(xy, text + ell, font=font, fill=fill)
+
+
+def wrap_text(draw, text, font, max_width, max_lines=2):
+    words = str(text or "").split()
+    lines = []
+    current = ""
+    for word in words:
+        candidate = word if not current else current + " " + word
+        if measure(draw, candidate, font)[0] <= max_width:
+            current = candidate
+        else:
+            if current:
+                lines.append(current)
+            current = word
+            if len(lines) >= max_lines:
+                break
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    if not lines:
+        lines = [str(text or "")]
+    # Fit long tokens.
+    fitted = []
+    for line in lines[:max_lines]:
+        if measure(draw, line, font)[0] <= max_width:
+            fitted.append(line)
+        else:
+            ell = "..."
+            while line and measure(draw, line + ell, font)[0] > max_width:
+                line = line[:-1]
+            fitted.append(line + ell)
+    return fitted
 
 
 def normalize_sku_for_print(value):
@@ -185,7 +171,7 @@ def label_lines_for_batch(batch):
     allergens = row_get(batch, "allergens", "")
     if allergens:
         lines.append(f"Allergens: {allergens}")
-    return lines
+    return [str(x) for x in lines if str(x or "").strip()]
 
 
 def label_lines_for_service(service):
@@ -203,91 +189,112 @@ def label_lines_for_service(service):
     allergens = row_get(service, "allergens", "")
     if allergens:
         lines.append(f"Allergens: {allergens}")
-    return lines
+    return [str(x) for x in lines if str(x or "").strip()]
 
 
-def label_height(line_count, has_sku=True):
-    # Compact 62mm continuous roll: 1.25-1.5 inch target, but grows for extra lines.
-    h = 198 + line_count * 21 + (48 if has_sku else 0)
-    return max(236, min(h, 310))
+def calculate_label_height(title_lines, detail_lines, has_sku):
+    h = 10
+    h += len(title_lines) * 35
+    h += 8
+    h += 25
+    h += 38
+    h += len(detail_lines) * 21
+    h += 8
+    if has_sku:
+        h += 50
+    h += 8
+    return max(228, min(h, 326))
 
 
 def draw_sku_footer(draw, sku, footer_top, height):
     sku = normalize_sku_for_print(sku)
     if not sku:
         return
-    draw.line((3, footer_top, W - 4, footer_top), fill=0, width=1)
-    barcode_w = 255
-    barcode_h = 24
+    draw.line((4, footer_top, W - 5, footer_top), fill=0, width=1)
+    barcode_w = 270
+    barcode_h = 23
     barcode_x = (W - barcode_w) // 2
     barcode_y = footer_top + 7
     draw_code128(draw, sku, barcode_x, barcode_y, barcode_w, barcode_h)
-    tw = row_text_width(draw, sku, F_SMALL)
-    draw.text(((W - tw) // 2, barcode_y + barcode_h + 1), sku, font=F_SMALL, fill=0)
+    sku_w = measure(draw, sku, F_SMALL)[0]
+    draw.text(((W - sku_w) // 2, barcode_y + barcode_h + 1), sku, font=F_SMALL, fill=0)
 
 
-def render_core_label(item_name, label_type, use_by, lines, url, sku, qr_caption):
+def render_core_label(item_name, label_type, use_by, detail_lines, url, sku, qr_caption):
     sku = normalize_sku_for_print(sku)
-    height = label_height(len(lines), bool(sku))
-    footer_top = height - 48 if sku else height - 8
+    qr_size = 82
+    qr_x = W - qr_size - 16
+    qr_y = 14
+    left = 18
+
+    tmp = Image.new("1", (W, 300), 1)
+    tdraw = ImageDraw.Draw(tmp)
+    title_max = qr_x - left - 10
+    title_lines = wrap_text(tdraw, str(item_name or "ITEM").upper(), F_TITLE, title_max, 2)
+
+    height = calculate_label_height(title_lines, detail_lines, bool(sku))
+    footer_top = height - 50 if sku else height - 8
 
     img = Image.new("1", (W, height), 1)
     draw = ImageDraw.Draw(img)
     draw.rectangle((3, 3, W - 4, height - 4), outline=0, width=2)
 
-    qr_size = 84
-    qr_x = W - qr_size - 18
-    qr_y = 16
     qr = make_qr(url).resize((qr_size, qr_size), RESAMPLE_FILTER)
     img.paste(qr, (qr_x, qr_y))
 
-    left = 18
-    title_max = qr_x - left - 10
-    fit_text(draw, str(item_name or "ITEM").upper(), (left, 12), title_max, F_TITLE)
+    y = 10
+    for line in title_lines:
+        fit_text(draw, line, (left, y), title_max, F_TITLE)
+        y += 35
 
-    y = 68
-    fit_text(draw, label_type, (left, y), title_max, F_MED)
-    y += 29
-    fit_text(draw, f"USE BY: {use_by}", (left, y), title_max, F_EXPIRE)
-    y += 39
+    y += 6
+    side_max = title_max if y < qr_y + qr_size + 28 else W - 36
+    fit_text(draw, label_type, (left, y), side_max, F_MED)
+    y += 27
+
+    side_max = title_max if y < qr_y + qr_size + 28 else W - 36
+    fit_text(draw, f"USE BY: {use_by}", (left, y), side_max, F_EXPIRE)
+    y += 38
 
     draw.text((qr_x + 7, qr_y + qr_size + 3), "SCAN", font=F_SMALL, fill=0)
     draw.text((qr_x + 7, qr_y + qr_size + 20), qr_caption, font=F_SMALL, fill=0)
 
-    max_y = footer_top - 4
-    for line in lines:
-        if y + 20 > max_y:
+    # Body details start below QR and always use full width.
+    y = max(y, qr_y + qr_size + 38)
+    for line in detail_lines:
+        if y + 19 > footer_top - 3:
             break
         fit_text(draw, line, (left, y), W - 36, F_BODY)
         y += 21
 
     if sku:
         draw_sku_footer(draw, sku, footer_top, height)
+
     return img
 
 
 def render_batch_label(batch, url):
     return render_core_label(
-        row_get(batch, "item_name", "ITEM"),
-        "MASTER BATCH",
-        fmt_dt(row_get(batch, "expires_at")),
-        label_lines_for_batch(batch),
-        url,
-        row_get(batch, "item_sku", row_get(batch, "sku", "")),
-        "BATCH",
+        item_name=row_get(batch, "item_name", "ITEM"),
+        label_type="MASTER BATCH",
+        use_by=fmt_dt(row_get(batch, "expires_at")),
+        detail_lines=label_lines_for_batch(batch),
+        url=url,
+        sku=row_get(batch, "item_sku", row_get(batch, "sku", "")),
+        qr_caption="BATCH",
     )
 
 
 def render_service_label(service, url):
     is_from_batch = bool(row_get(service, "batch_code"))
     return render_core_label(
-        row_get(service, "item_name", "ITEM"),
-        "IN USE" if is_from_batch else "DAY OF PREP",
-        fmt_dt(row_get(service, "expires_at")),
-        label_lines_for_service(service),
-        url,
-        row_get(service, "item_sku", row_get(service, "sku", "")),
-        "LABEL",
+        item_name=row_get(service, "item_name", "ITEM"),
+        label_type="IN USE" if is_from_batch else "DAY OF PREP",
+        use_by=fmt_dt(row_get(service, "expires_at")),
+        detail_lines=label_lines_for_service(service),
+        url=url,
+        sku=row_get(service, "item_sku", row_get(service, "sku", "")),
+        qr_caption="LABEL",
     )
 
 

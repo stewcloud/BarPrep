@@ -1,5 +1,20 @@
 # Changelog
 
+## [7.0] - 2026-07-05
+### Added
+- Production Label Engine
+- Region-based label rendering
+- Wrapping item titles
+- Full-width body details below QR
+- Compact readable date formatting
+- Dedicated SKU barcode footer
+
+### Fixed
+- Over-truncated titles
+- QR region stealing body text width
+- SKU barcode footer placement issues
+
+
 ## [5.6] - 2026-07-05
 ### Changed
 - Rewrote label renderer with Header, QR, Details, and SKU Footer regions

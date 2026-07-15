@@ -184,3 +184,11 @@ PRINT_MODE=mock
 - Adds dedicated full-width SKU footer
 - Preserves compact 62mm continuous-roll utility label style
 - Build number updated to v5.6
+
+## v7.0
+- Production Label Engine
+- Adds region-based label renderer with wrapping title
+- Only header content avoids QR; body details use full width below QR
+- Shorter readable date format on labels
+- Dedicated full-width SKU footer
+- Build number updated to v7.0
