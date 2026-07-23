@@ -66,6 +66,13 @@
   <form method="post" action="/edge-devices/{{ device.id }}/toggle" style="display:inline">
     <button class="secondary" type="submit">{% if device.active %}Disable{% else %}Enable{% endif %}</button>
   </form>
+
+  <form method="post"
+        action="/edge-devices/{{ device.id }}/delete"
+        style="display:inline"
+        onsubmit="return confirm('Permanently remove this Edge device and its job history?');">
+    <button class="danger" type="submit">Remove Device</button>
+  </form>
 </div>
 
 <div class="card">

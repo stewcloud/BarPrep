@@ -21,7 +21,7 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8540"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v6.1b"
+APP_VERSION = "v6.1c"
 EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 EDGE_PAIRING_CODE_TTL_MINUTES = int(os.getenv("EDGE_PAIRING_CODE_TTL_MINUTES", "15"))
 EDGE_HEARTBEAT_OFFLINE_SECONDS = int(os.getenv("EDGE_HEARTBEAT_OFFLINE_SECONDS", "90"))
@@ -1432,6 +1432,31 @@ def edge_device_new_pairing_code(device_id):
     db().commit()
     flash(f"New pairing code: {code[:3]}-{code[3:]}")
     return redirect(url_for("edge_device_detail", device_id=device_id))
+
+
+
+@app.post("/edge-devices/<int:device_id>/delete")
+@login_required
+@require_permission("manage_edge_devices")
+def edge_device_delete(device_id):
+    device = db().execute(
+        "SELECT * FROM edge_devices WHERE id=?",
+        (device_id,),
+    ).fetchone()
+    if not device:
+        abort(404)
+
+    db().execute(
+        "DELETE FROM edge_print_jobs WHERE edge_device_id=?",
+        (device_id,),
+    )
+    db().execute(
+        "DELETE FROM edge_devices WHERE id=?",
+        (device_id,),
+    )
+    db().commit()
+    flash(f"Removed Edge device: {device['device_name']}")
+    return redirect(url_for("edge_devices_page"))
 
 
 @app.post("/edge-devices/<int:device_id>/toggle")
