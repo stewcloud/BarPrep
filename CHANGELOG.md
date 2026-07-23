@@ -1,5 +1,19 @@
 # Changelog
 
+## [6.1a] - 2026-07-23
+### Added
+- Pending-device approval workflow
+- Approve and reject controls in Edge administration
+- Private pairing claim tokens
+- `/api/edge/pair-status` polling endpoint
+- One-time API-key delivery after approval
+
+### Changed
+- Edge appliances now own their UUID and self-register
+- Manual UUID matching is no longer required
+- Legacy `/api/edge/pair` returns migration guidance
+
+
 ## [6.1] - 2026-07-23
 ### Added
 - Edge device management

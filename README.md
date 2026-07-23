@@ -204,3 +204,17 @@ PRINT_MODE=mock
 - Heartbeats and online status
 - Basic print-job queue API
 - API keys stored as SHA-256 hashes
+
+## v6.1a — Approval Pairing
+
+The aligned pairing sequence is:
+
+1. Edge calls `POST /api/edge/register`.
+2. Core returns a display code and private `claim_token`.
+3. Core shows the device as **Pending approval**.
+4. Manager confirms the code and selects **Approve Device**.
+5. Edge polls `POST /api/edge/pair-status`.
+6. Core delivers the API key once and clears the temporary pairing claim.
+7. Edge stores the API key, sends heartbeats, and polls jobs.
+
+The legacy `/api/edge/pair` endpoint now returns HTTP 409 with migration instructions.

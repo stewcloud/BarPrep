@@ -1,11 +1,89 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>{{ device.device_name }}</h1>
-<div class="grid">
-<div class="card"><h2>Status</h2><p><strong>{% if device.online %}🟢 Online{% else %}⚪ Offline{% endif %}</strong></p><p><strong>UUID:</strong> {{ device.device_uuid }}</p><p><strong>Version:</strong> {{ device.software_version or "Unknown" }}</p><p><strong>Last Seen:</strong> {{ device.last_seen or "Never" }}</p><p><strong>IP:</strong> {{ device.ip_address or "Unknown" }}</p></div>
-<div class="card"><h2>Printer</h2><p><strong>Model:</strong> {{ device.printer_model or "Not reported" }}</p><p><strong>Serial:</strong> {{ device.printer_serial or "Not reported" }}</p><p><strong>Status:</strong> {{ device.printer_status or "Unknown" }}</p><p><strong>Media:</strong> {{ device.media_label or "Unknown" }}</p></div>
-<div class="card"><h2>Pairing</h2>{% if device.pairing_code %}<p style="font-size:34px;font-weight:900">{{ device.pairing_code[:3] }}-{{ device.pairing_code[3:] }}</p><p class="muted">Expires: {{ device.pairing_expires_at }}</p>{% elif device.paired_at %}<p><strong>Paired:</strong> {{ device.paired_at }}</p>{% else %}<p class="muted">Not paired.</p>{% endif %}<form method="post" action="/edge-devices/{{ device.id }}/new-pairing-code"><button type="submit">Generate Pairing Code</button></form></div>
+
+{% if device.approval_status == "pending" %}
+<div class="flash">
+  Confirm that this code matches the code shown on the Edge appliance:
+  <strong style="font-size:28px">{{ device.pairing_code[:3] }}-{{ device.pairing_code[3:] }}</strong>
 </div>
-<div class="card"><h2>Actions</h2><form method="post" action="/edge-devices/{{ device.id }}/test-job"><button type="submit">Queue Test Job</button></form></div>
-<div class="card"><h2>Recent Jobs</h2><table><tr><th>ID</th><th>Type</th><th>Status</th><th>Attempts</th><th>Created</th><th>Error</th></tr>{% for job in jobs %}<tr><td>{{ job.id }}</td><td>{{ job.job_type }}</td><td>{{ job.status }}</td><td>{{ job.attempts }}</td><td>{{ job.created_at }}</td><td>{{ job.error_message or "" }}</td></tr>{% else %}<tr><td colspan="6" class="muted">No jobs yet.</td></tr>{% endfor %}</table></div>
+{% endif %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Status</h2>
+    <p><strong>
+      {% if device.approval_status == "pending" %}🟡 Pending approval
+      {% elif device.approval_status == "rejected" %}🔴 Rejected
+      {% elif device.online %}🟢 Online
+      {% else %}⚪ Offline{% endif %}
+    </strong></p>
+    <p><strong>UUID:</strong> {{ device.device_uuid }}</p>
+    <p><strong>Version:</strong> {{ device.software_version or "Unknown" }}</p>
+    <p><strong>Last Seen:</strong> {{ device.last_seen or "Never" }}</p>
+    <p><strong>IP:</strong> {{ device.ip_address or "Unknown" }}</p>
+  </div>
+
+  <div class="card">
+    <h2>Printer</h2>
+    <p><strong>Model:</strong> {{ device.printer_model or "Not reported" }}</p>
+    <p><strong>Serial:</strong> {{ device.printer_serial or "Not reported" }}</p>
+    <p><strong>Status:</strong> {{ device.printer_status or "Unknown" }}</p>
+    <p><strong>Media:</strong> {{ device.media_label or "Unknown" }}</p>
+  </div>
+
+  <div class="card">
+    <h2>Pairing</h2>
+    {% if device.approval_status == "pending" %}
+      <p style="font-size:34px;font-weight:900;letter-spacing:.08em">
+        {{ device.pairing_code[:3] }}-{{ device.pairing_code[3:] }}
+      </p>
+      <p class="muted">Expires: {{ device.pairing_expires_at }}</p>
+      <form method="post" action="/edge-devices/{{ device.id }}/approve">
+        <button type="submit">Approve Device</button>
+      </form>
+      <form method="post" action="/edge-devices/{{ device.id }}/reject">
+        <button class="secondary" type="submit">Reject</button>
+      </form>
+    {% elif device.approval_status == "approved" and not device.paired_at %}
+      <p><strong>Approved.</strong> Waiting for the appliance to collect its key.</p>
+    {% elif device.paired_at %}
+      <p><strong>Paired:</strong> {{ device.paired_at }}</p>
+    {% else %}
+      <p class="muted">Not paired.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Actions</h2>
+  <form method="post" action="/edge-devices/{{ device.id }}/test-job" style="display:inline">
+    <button type="submit">Queue Test Job</button>
+  </form>
+  <form method="post" action="/edge-devices/{{ device.id }}/new-pairing-code" style="display:inline">
+    <button class="secondary" type="submit">Reset Pairing</button>
+  </form>
+  <form method="post" action="/edge-devices/{{ device.id }}/toggle" style="display:inline">
+    <button class="secondary" type="submit">{% if device.active %}Disable{% else %}Enable{% endif %}</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Recent Jobs</h2>
+  <table>
+    <tr><th>ID</th><th>Type</th><th>Status</th><th>Attempts</th><th>Created</th><th>Error</th></tr>
+    {% for job in jobs %}
+      <tr>
+        <td>{{ job.id }}</td>
+        <td>{{ job.job_type }}</td>
+        <td>{{ job.status }}</td>
+        <td>{{ job.attempts }}</td>
+        <td>{{ job.created_at }}</td>
+        <td>{{ job.error_message or "" }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">No jobs yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
 {% endblock %}

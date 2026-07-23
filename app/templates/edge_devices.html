@@ -1,15 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
-  <div><h1>Edge Devices</h1><p class="muted">Pair and manage BarPrep Edge appliances and printers.</p></div>
-  <a class="btn" href="/edge-devices/new">+ Add Edge Device</a>
-</div>
-<div class="card">
-{% for device in devices %}
-  <div class="item-row">
-    <div><strong>{{ device.device_name }}</strong><div class="muted">{% if device.online %}🟢 Online{% else %}⚪ Offline{% endif %} · {{ device.printer_model or "No printer reported" }} · {{ device.software_version or "Version unknown" }}</div><div class="muted">Last seen: {{ device.last_seen or "Never" }}</div></div>
-    <a class="btn light" href="/edge-devices/{{ device.id }}">Open</a>
+  <div>
+    <h1>Edge Devices</h1>
+    <p class="muted">Edge appliances register themselves. Approve the code shown on the appliance.</p>
   </div>
-{% else %}<p class="muted">No Edge devices yet.</p>{% endfor %}
+  <a class="btn light" href="/edge-devices/new">Manual Device</a>
+</div>
+
+<div class="card">
+  {% for device in devices %}
+    <div class="item-row">
+      <div>
+        <strong>{{ device.device_name }}</strong>
+        <div>
+          {% if device.approval_status == "pending" %}
+            <strong>🟡 Pending approval</strong>
+            {% if device.pairing_code %} · Code {{ device.pairing_code[:3] }}-{{ device.pairing_code[3:] }}{% endif %}
+          {% elif device.approval_status == "rejected" %}
+            <strong>🔴 Rejected</strong>
+          {% elif device.online %}
+            <strong>🟢 Online</strong>
+          {% else %}
+            <strong>⚪ Offline</strong>
+          {% endif %}
+        </div>
+        <div class="muted">
+          {{ device.printer_model or "No printer reported" }}
+          · {{ device.software_version or "Version unknown" }}
+          · UUID {{ device.device_uuid }}
+        </div>
+      </div>
+      <a class="btn light" href="/edge-devices/{{ device.id }}">Open</a>
+    </div>
+  {% else %}
+    <p class="muted">No devices registered. Power on BarPrep Edge to begin.</p>
+  {% endfor %}
 </div>
 {% endblock %}

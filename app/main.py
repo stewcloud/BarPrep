@@ -9,7 +9,7 @@ import io
 from datetime import datetime, timedelta
 from pathlib import Path
 from functools import wraps
-from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session, Response
+from flask import Flask, g, redirect, render_template, request, send_file, url_for, abort, flash, session, Response, jsonify
 from dotenv import load_dotenv
 
 from .labels import render_batch_label, render_service_label, render_custom_label
@@ -21,7 +21,7 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8540"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v6.1"
+APP_VERSION = "v6.1a"
 EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 EDGE_PAIRING_CODE_TTL_MINUTES = int(os.getenv("EDGE_PAIRING_CODE_TTL_MINUTES", "15"))
 EDGE_HEARTBEAT_OFFLINE_SECONDS = int(os.getenv("EDGE_HEARTBEAT_OFFLINE_SECONDS", "90"))
@@ -199,6 +199,10 @@ def init_db():
         device_name TEXT NOT NULL,
         pairing_code TEXT,
         pairing_expires_at TEXT,
+        pairing_claim_hash TEXT,
+        pending_api_key TEXT,
+        approval_status TEXT NOT NULL DEFAULT 'pending',
+        approved_at TEXT,
         api_key_hash TEXT,
         paired_at TEXT,
         software_version TEXT,
@@ -231,6 +235,15 @@ def init_db():
         ON edge_print_jobs(edge_device_id, status, created_at);
 
     """)
+
+    if not column_exists(conn, "edge_devices", "pairing_claim_hash"):
+        cur.execute("ALTER TABLE edge_devices ADD COLUMN pairing_claim_hash TEXT")
+    if not column_exists(conn, "edge_devices", "pending_api_key"):
+        cur.execute("ALTER TABLE edge_devices ADD COLUMN pending_api_key TEXT")
+    if not column_exists(conn, "edge_devices", "approved_at"):
+        cur.execute("ALTER TABLE edge_devices ADD COLUMN approved_at TEXT")
+    if not column_exists(conn, "edge_devices", "approval_status"):
+        cur.execute("ALTER TABLE edge_devices ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'pending'")
 
     if not column_exists(conn, "users", "pin_hash"):
         cur.execute("ALTER TABLE users ADD COLUMN pin_hash TEXT NOT NULL DEFAULT ''")
@@ -516,6 +529,10 @@ def generate_pairing_code():
 
 def generate_edge_api_key():
     return secrets.token_urlsafe(32)
+
+
+def generate_pairing_claim_token():
+    return secrets.token_urlsafe(24)
 
 
 def client_ip():
@@ -1287,11 +1304,14 @@ def admin_health():
     )
 
 
+
 @app.route("/edge-devices")
 @login_required
 @require_permission("manage_edge_devices")
 def edge_devices_page():
-    rows = db().execute("SELECT * FROM edge_devices ORDER BY active DESC, device_name COLLATE NOCASE").fetchall()
+    rows = db().execute(
+        "SELECT * FROM edge_devices ORDER BY active DESC, created_at DESC"
+    ).fetchall()
     devices = []
     for row in rows:
         record = dict(row)
@@ -1304,19 +1324,30 @@ def edge_devices_page():
 @login_required
 @require_permission("manage_edge_devices")
 def edge_device_new():
+    # Manual creation remains available for diagnostics, but normal onboarding
+    # should begin from the Edge appliance calling /api/edge/register.
     if request.method == "POST":
         name = request.form.get("device_name", "").strip() or "BarPrep Edge"
         device_uuid = request.form.get("device_uuid", "").strip() or secrets.token_hex(16)
         code = generate_pairing_code()
+        claim_token = generate_pairing_claim_token()
         expires = (datetime.utcnow() + timedelta(minutes=EDGE_PAIRING_CODE_TTL_MINUTES)).isoformat(timespec="seconds")
         try:
-            db().execute("INSERT INTO edge_devices (device_uuid, device_name, pairing_code, pairing_expires_at, created_at) VALUES (?, ?, ?, ?, ?)", (device_uuid, name, code, expires, edge_utc_now()))
+            db().execute(
+                """
+                INSERT INTO edge_devices
+                (device_uuid, device_name, pairing_code, pairing_expires_at,
+                 pairing_claim_hash, approval_status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?)
+                """,
+                (device_uuid, name, code, expires, edge_hash_secret(claim_token), edge_utc_now()),
+            )
             db().commit()
         except Exception as exc:
             db().rollback()
             flash(f"Could not create Edge device: {exc}")
             return render_template("edge_device_new.html")
-        flash(f"Edge device created. Pairing code: {code[:3]}-{code[3:]}")
+        flash(f"Pending Edge device created. Pairing code: {code[:3]}-{code[3:]}")
         return redirect(url_for("edge_devices_page"))
     return render_template("edge_device_new.html")
 
@@ -1328,10 +1359,57 @@ def edge_device_detail(device_id):
     device = db().execute("SELECT * FROM edge_devices WHERE id=?", (device_id,)).fetchone()
     if not device:
         abort(404)
-    jobs = db().execute("SELECT * FROM edge_print_jobs WHERE edge_device_id=? ORDER BY id DESC LIMIT 50", (device_id,)).fetchall()
+    jobs = db().execute(
+        "SELECT * FROM edge_print_jobs WHERE edge_device_id=? ORDER BY id DESC LIMIT 50",
+        (device_id,),
+    ).fetchall()
     data = dict(device)
     data["online"] = edge_is_online(device)
     return render_template("edge_device_detail.html", device=data, jobs=jobs)
+
+
+@app.post("/edge-devices/<int:device_id>/approve")
+@login_required
+@require_permission("manage_edge_devices")
+def edge_device_approve(device_id):
+    device = db().execute("SELECT * FROM edge_devices WHERE id=? AND active=1", (device_id,)).fetchone()
+    if not device:
+        abort(404)
+    if not device["pairing_claim_hash"]:
+        flash("This device does not have an active self-registration claim. Ask the Edge device to register again.")
+        return redirect(url_for("edge_device_detail", device_id=device_id))
+
+    api_key = generate_edge_api_key()
+    db().execute(
+        """
+        UPDATE edge_devices
+        SET approval_status='approved', approved_at=?, api_key_hash=?,
+            pending_api_key=?, paired_at=NULL
+        WHERE id=?
+        """,
+        (edge_utc_now(), edge_hash_secret(api_key), api_key, device_id),
+    )
+    db().commit()
+    flash("Device approved. It will come online when it collects its one-time API key.")
+    return redirect(url_for("edge_device_detail", device_id=device_id))
+
+
+@app.post("/edge-devices/<int:device_id>/reject")
+@login_required
+@require_permission("manage_edge_devices")
+def edge_device_reject(device_id):
+    db().execute(
+        """
+        UPDATE edge_devices
+        SET approval_status='rejected', approved_at=NULL, pending_api_key=NULL,
+            api_key_hash=NULL, paired_at=NULL
+        WHERE id=?
+        """,
+        (device_id,),
+    )
+    db().commit()
+    flash("Device pairing request rejected.")
+    return redirect(url_for("edge_device_detail", device_id=device_id))
 
 
 @app.post("/edge-devices/<int:device_id>/new-pairing-code")
@@ -1339,10 +1417,32 @@ def edge_device_detail(device_id):
 @require_permission("manage_edge_devices")
 def edge_device_new_pairing_code(device_id):
     code = generate_pairing_code()
+    claim_token = generate_pairing_claim_token()
     expires = (datetime.utcnow() + timedelta(minutes=EDGE_PAIRING_CODE_TTL_MINUTES)).isoformat(timespec="seconds")
-    db().execute("UPDATE edge_devices SET pairing_code=?, pairing_expires_at=?, api_key_hash=NULL, paired_at=NULL WHERE id=?", (code, expires, device_id))
+    db().execute(
+        """
+        UPDATE edge_devices
+        SET pairing_code=?, pairing_expires_at=?, pairing_claim_hash=?,
+            pending_api_key=NULL, api_key_hash=NULL, paired_at=NULL,
+            approved_at=NULL, approval_status='pending'
+        WHERE id=?
+        """,
+        (code, expires, edge_hash_secret(claim_token), device_id),
+    )
     db().commit()
     flash(f"New pairing code: {code[:3]}-{code[3:]}")
+    return redirect(url_for("edge_device_detail", device_id=device_id))
+
+
+@app.post("/edge-devices/<int:device_id>/toggle")
+@login_required
+@require_permission("manage_edge_devices")
+def edge_device_toggle(device_id):
+    db().execute(
+        "UPDATE edge_devices SET active=CASE WHEN active=1 THEN 0 ELSE 1 END WHERE id=?",
+        (device_id,),
+    )
+    db().commit()
     return redirect(url_for("edge_device_detail", device_id=device_id))
 
 
@@ -1350,8 +1450,19 @@ def edge_device_new_pairing_code(device_id):
 @login_required
 @require_permission("manage_edge_devices")
 def edge_device_test_job(device_id):
-    payload = json.dumps({"kind":"test","title":"BarPrep Edge Test","message":"Pairing and queue are working."})
-    db().execute("INSERT INTO edge_print_jobs (edge_device_id, job_type, payload_json, status, created_at) VALUES (?, 'test', ?, 'pending', ?)", (device_id, payload, edge_utc_now()))
+    payload = json.dumps({
+        "kind": "test",
+        "title": "BarPrep Edge Test",
+        "message": "Pairing and queue are working.",
+    })
+    db().execute(
+        """
+        INSERT INTO edge_print_jobs
+        (edge_device_id, job_type, payload_json, status, created_at)
+        VALUES (?, 'test', ?, 'pending', ?)
+        """,
+        (device_id, payload, edge_utc_now()),
+    )
     db().commit()
     flash("Test job queued.")
     return redirect(url_for("edge_device_detail", device_id=device_id))
@@ -1363,32 +1474,122 @@ def api_edge_register():
     device_uuid = str(data.get("device_uuid", "")).strip()
     name = str(data.get("device_name", "")).strip() or "BarPrep Edge"
     if not device_uuid:
-        return jsonify({"ok":False,"error":"device_uuid_required"}), 400
+        return jsonify({"ok": False, "error": "device_uuid_required"}), 400
+
     code = generate_pairing_code()
+    claim_token = generate_pairing_claim_token()
     expires = (datetime.utcnow() + timedelta(minutes=EDGE_PAIRING_CODE_TTL_MINUTES)).isoformat(timespec="seconds")
-    existing = db().execute("SELECT id FROM edge_devices WHERE device_uuid=?", (device_uuid,)).fetchone()
+    existing = db().execute(
+        "SELECT id FROM edge_devices WHERE device_uuid=?",
+        (device_uuid,),
+    ).fetchone()
+
     if existing:
-        db().execute("UPDATE edge_devices SET device_name=?, pairing_code=?, pairing_expires_at=?, active=1 WHERE id=?", (name, code, expires, existing["id"]))
+        db().execute(
+            """
+            UPDATE edge_devices
+            SET device_name=?, pairing_code=?, pairing_expires_at=?,
+                pairing_claim_hash=?, pending_api_key=NULL, approved_at=NULL,
+                approval_status='pending', active=1
+            WHERE id=?
+            """,
+            (name, code, expires, edge_hash_secret(claim_token), existing["id"]),
+        )
+        device_id = existing["id"]
     else:
-        db().execute("INSERT INTO edge_devices (device_uuid, device_name, pairing_code, pairing_expires_at, created_at) VALUES (?, ?, ?, ?, ?)", (device_uuid, name, code, expires, edge_utc_now()))
+        cur = db().execute(
+            """
+            INSERT INTO edge_devices
+            (device_uuid, device_name, pairing_code, pairing_expires_at,
+             pairing_claim_hash, approval_status, active, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', 1, ?)
+            """,
+            (device_uuid, name, code, expires, edge_hash_secret(claim_token), edge_utc_now()),
+        )
+        device_id = cur.lastrowid
+
     db().commit()
-    return jsonify({"ok":True,"device_uuid":device_uuid,"pairing_code":code,"pairing_code_display":f"{code[:3]}-{code[3:]}","expires_at":expires})
+    return jsonify({
+        "ok": True,
+        "device_id": device_id,
+        "device_uuid": device_uuid,
+        "pairing_code": code,
+        "pairing_code_display": f"{code[:3]}-{code[3:]}",
+        "claim_token": claim_token,
+        "approval_status": "pending",
+        "expires_at": expires,
+        "pair_status_url": f"{APP_BASE_URL}/api/edge/pair-status",
+    })
+
+
+@app.post("/api/edge/pair-status")
+def api_edge_pair_status():
+    data = request.get_json(silent=True) or {}
+    device_uuid = str(data.get("device_uuid", "")).strip()
+    claim_token = str(data.get("claim_token", "")).strip()
+    if not device_uuid or not claim_token:
+        return jsonify({"ok": False, "error": "device_uuid_and_claim_token_required"}), 400
+
+    device = db().execute(
+        "SELECT * FROM edge_devices WHERE device_uuid=? AND active=1",
+        (device_uuid,),
+    ).fetchone()
+    if not device or not device["pairing_claim_hash"]:
+        return jsonify({"ok": False, "error": "pairing_request_not_found"}), 404
+    if not secrets.compare_digest(device["pairing_claim_hash"], edge_hash_secret(claim_token)):
+        return jsonify({"ok": False, "error": "invalid_claim_token"}), 401
+
+    if device["pairing_expires_at"]:
+        try:
+            if datetime.utcnow() > datetime.fromisoformat(device["pairing_expires_at"]):
+                return jsonify({"ok": False, "approval_status": "expired"}), 410
+        except Exception:
+            return jsonify({"ok": False, "approval_status": "expired"}), 410
+
+    status = device["approval_status"] or "pending"
+    if status == "rejected":
+        return jsonify({"ok": True, "approval_status": "rejected"}), 200
+    if status != "approved":
+        return jsonify({
+            "ok": True,
+            "approval_status": "pending",
+            "pairing_code_display": f"{device['pairing_code'][:3]}-{device['pairing_code'][3:]}" if device["pairing_code"] else None,
+        })
+
+    api_key = device["pending_api_key"]
+    if not api_key:
+        # Key was already collected. The Edge should use its stored credential.
+        return jsonify({"ok": True, "approval_status": "paired", "api_key_delivered": True})
+
+    db().execute(
+        """
+        UPDATE edge_devices
+        SET pending_api_key=NULL, pairing_code=NULL, pairing_expires_at=NULL,
+            pairing_claim_hash=NULL, paired_at=?, last_seen=?
+        WHERE id=?
+        """,
+        (edge_utc_now(), edge_utc_now(), device["id"]),
+    )
+    db().commit()
+
+    return jsonify({
+        "ok": True,
+        "approval_status": "approved",
+        "api_key": api_key,
+        "device_id": device["id"],
+        "heartbeat_interval_seconds": 30,
+        "jobs_poll_interval_seconds": 5,
+    })
 
 
 @app.post("/api/edge/pair")
-def api_edge_pair():
-    data = request.get_json(silent=True) or {}
-    device_uuid = str(data.get("device_uuid", "")).strip()
-    code = "".join(ch for ch in str(data.get("pairing_code", "")) if ch.isdigit())
-    device = db().execute("SELECT * FROM edge_devices WHERE device_uuid=? AND active=1", (device_uuid,)).fetchone()
-    if not device or device["pairing_code"] != code:
-        return jsonify({"ok":False,"error":"invalid_pairing_code"}), 404
-    if not device["pairing_expires_at"] or datetime.utcnow() > datetime.fromisoformat(device["pairing_expires_at"]):
-        return jsonify({"ok":False,"error":"pairing_code_expired"}), 410
-    api_key = generate_edge_api_key()
-    db().execute("UPDATE edge_devices SET api_key_hash=?, pairing_code=NULL, pairing_expires_at=NULL, paired_at=?, last_seen=? WHERE id=?", (edge_hash_secret(api_key), edge_utc_now(), edge_utc_now(), device["id"]))
-    db().commit()
-    return jsonify({"ok":True,"api_key":api_key,"device_id":device["id"],"heartbeat_interval_seconds":30,"jobs_poll_interval_seconds":5})
+def api_edge_pair_legacy():
+    # Kept to make the mismatch explicit to older Edge builds.
+    return jsonify({
+        "ok": False,
+        "error": "approval_pairing_required",
+        "detail": "Register with /api/edge/register, display the returned code, then poll /api/edge/pair-status using the claim_token.",
+    }), 409
 
 
 @app.post("/api/edge/heartbeat")
@@ -1396,36 +1597,90 @@ def api_edge_pair():
 def api_edge_heartbeat(device):
     data = request.get_json(silent=True) or {}
     ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
-    db().execute("UPDATE edge_devices SET last_seen=?, software_version=?, printer_model=?, printer_serial=?, printer_status=?, media_label=?, ip_address=?, wifi_signal=? WHERE id=?", (edge_utc_now(), str(data.get("software_version", ""))[:80], str(data.get("printer_model", ""))[:120], str(data.get("printer_serial", ""))[:120], str(data.get("printer_status", ""))[:80], str(data.get("media_label", ""))[:80], ip, data.get("wifi_signal"), device["id"]))
+    db().execute(
+        """
+        UPDATE edge_devices
+        SET last_seen=?, software_version=?, printer_model=?, printer_serial=?,
+            printer_status=?, media_label=?, ip_address=?, wifi_signal=?
+        WHERE id=?
+        """,
+        (
+            edge_utc_now(),
+            str(data.get("software_version", ""))[:80],
+            str(data.get("printer_model", ""))[:120],
+            str(data.get("printer_serial", ""))[:120],
+            str(data.get("printer_status", ""))[:80],
+            str(data.get("media_label", ""))[:80],
+            ip,
+            data.get("wifi_signal"),
+            device["id"],
+        ),
+    )
     db().commit()
-    pending = db().execute("SELECT COUNT(*) AS c FROM edge_print_jobs WHERE edge_device_id=? AND status='pending'", (device["id"],)).fetchone()["c"]
-    return jsonify({"ok":True,"server_time":edge_utc_now(),"pending_jobs":pending})
+    pending = db().execute(
+        "SELECT COUNT(*) AS c FROM edge_print_jobs WHERE edge_device_id=? AND status='pending'",
+        (device["id"],),
+    ).fetchone()["c"]
+    return jsonify({"ok": True, "server_time": edge_utc_now(), "pending_jobs": pending})
 
 
 @app.get("/api/edge/jobs")
 @require_edge_api
 def api_edge_jobs(device):
-    jobs = db().execute("SELECT * FROM edge_print_jobs WHERE edge_device_id=? AND status='pending' ORDER BY id LIMIT 5", (device["id"],)).fetchall()
-    result=[]
-    now=edge_utc_now()
+    jobs = db().execute(
+        """
+        SELECT * FROM edge_print_jobs
+        WHERE edge_device_id=? AND status='pending'
+        ORDER BY id LIMIT 5
+        """,
+        (device["id"],),
+    ).fetchall()
+    result = []
+    now = edge_utc_now()
     for job in jobs:
-        db().execute("UPDATE edge_print_jobs SET status='claimed', claimed_at=?, attempts=attempts+1 WHERE id=?", (now, job["id"]))
-        result.append({"id":job["id"],"job_type":job["job_type"],"payload":json.loads(job["payload_json"]),"created_at":job["created_at"]})
+        db().execute(
+            """
+            UPDATE edge_print_jobs
+            SET status='claimed', claimed_at=?, attempts=attempts+1
+            WHERE id=? AND status='pending'
+            """,
+            (now, job["id"]),
+        )
+        result.append({
+            "id": job["id"],
+            "job_type": job["job_type"],
+            "payload": json.loads(job["payload_json"]),
+            "created_at": job["created_at"],
+        })
     db().commit()
-    return jsonify({"ok":True,"jobs":result})
+    return jsonify({"ok": True, "jobs": result})
 
 
 @app.post("/api/edge/jobs/<int:job_id>/complete")
 @require_edge_api
 def api_edge_job_complete(device, job_id):
-    data=request.get_json(silent=True) or {}
-    success=bool(data.get("success", True))
-    status="completed" if success else "failed"
-    cur=db().execute("UPDATE edge_print_jobs SET status=?, completed_at=?, error_message=? WHERE id=? AND edge_device_id=?", (status, edge_utc_now(), None if success else str(data.get("error", "unknown_error"))[:1000], job_id, device["id"]))
+    data = request.get_json(silent=True) or {}
+    success = bool(data.get("success", True))
+    status = "completed" if success else "failed"
+    cur = db().execute(
+        """
+        UPDATE edge_print_jobs
+        SET status=?, completed_at=?, error_message=?
+        WHERE id=? AND edge_device_id=?
+        """,
+        (
+            status,
+            edge_utc_now(),
+            None if success else str(data.get("error", "unknown_error"))[:1000],
+            job_id,
+            device["id"],
+        ),
+    )
     db().commit()
     if cur.rowcount == 0:
-        return jsonify({"ok":False,"error":"job_not_found"}), 404
-    return jsonify({"ok":True,"job_id":job_id,"status":status})
+        return jsonify({"ok": False, "error": "job_not_found"}), 404
+    return jsonify({"ok": True, "job_id": job_id, "status": status})
+
 
 
 @app.route("/permissions", methods=["GET", "POST"])
