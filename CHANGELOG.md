@@ -1,5 +1,13 @@
 # Changelog
 
+## [6.1] - 2026-07-23
+### Added
+- Edge device management
+- Secure pairing codes and hashed API keys
+- Heartbeats and device status
+- Basic Edge print-job queue
+
+
 ## [6.0a] - 2026-07-15
 ### Fixed
 - Restored missing `make_qr()` helper

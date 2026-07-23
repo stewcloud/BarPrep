@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <div><h1>Edge Devices</h1><p class="muted">Pair and manage BarPrep Edge appliances and printers.</p></div>
+  <a class="btn" href="/edge-devices/new">+ Add Edge Device</a>
+</div>
+<div class="card">
+{% for device in devices %}
+  <div class="item-row">
+    <div><strong>{{ device.device_name }}</strong><div class="muted">{% if device.online %}🟢 Online{% else %}⚪ Offline{% endif %} · {{ device.printer_model or "No printer reported" }} · {{ device.software_version or "Version unknown" }}</div><div class="muted">Last seen: {{ device.last_seen or "Never" }}</div></div>
+    <a class="btn light" href="/edge-devices/{{ device.id }}">Open</a>
+  </div>
+{% else %}<p class="muted">No Edge devices yet.</p>{% endfor %}
+</div>
+{% endblock %}

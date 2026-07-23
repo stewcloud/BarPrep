@@ -197,3 +197,10 @@ PRINT_MODE=mock
 - Fixes missing make_qr helper
 - Fixes label preview and printing HTTP 500 errors
 - Corrects displayed build numbering from v7.0 to v6.0a
+
+## v6.1 — Edge Device Foundation
+- Edge device admin pages
+- Pairing API
+- Heartbeats and online status
+- Basic print-job queue API
+- API keys stored as SHA-256 hashes

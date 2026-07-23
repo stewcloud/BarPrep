@@ -75,7 +75,7 @@
         <path class="logo-fill" d="M18 16h28L34 29H30L18 16z"/>
         <circle class="logo-fill" cx="47" cy="13" r="4"/>
       </svg>
-      <span class="brand-wrap"><span>{{ brand_name }}</span><span class="build-number">BUILD v6.0a</span></span>
+      <span class="brand-wrap"><span>{{ brand_name }}</span><span class="build-number">BUILD v6.1</span></span>
     </a>
   </div>
   {% if current_user %}
@@ -104,6 +104,7 @@
     <h3>Management</h3>
     <a href="/items">Items</a>
     {% if has_permission("manage_users") %}<a href="/users">Users</a>{% endif %}
+    {% if has_permission("manage_edge_devices") %}<a href="/edge-devices">Edge Devices</a>{% endif %}
     {% if has_permission("manage_permissions") %}<a href="/permissions">Permissions</a>{% endif %}
     {% if has_permission("manage_permissions") %}<a href="/admin/health">Health</a>{% endif %}
   </div>

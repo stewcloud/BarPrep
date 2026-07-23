@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Add Edge Device</h1>
+<form method="post" class="card">
+<label>Device Name</label><input name="device_name" value="Prep Printer" required>
+<label>Device UUID</label><input name="device_uuid" placeholder="Leave blank to generate one">
+<p class="muted">Normal Edge onboarding can register automatically through the API.</p>
+<button type="submit">Create Pairing Code</button>
+</form>
+{% endblock %}
