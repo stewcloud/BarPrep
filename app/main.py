@@ -21,7 +21,7 @@ APP_HOST = os.getenv("APP_HOST", "0.0.0.0")
 APP_PORT = int(os.getenv("APP_PORT", "8540"))
 DATABASE_PATH = os.getenv("DATABASE_PATH", "/app/data/barprep.sqlite")
 APP_BASE_URL = os.getenv("APP_BASE_URL", f"http://localhost:{APP_PORT}").rstrip("/")
-APP_VERSION = "v6.1a"
+APP_VERSION = "v6.1b"
 EMERGENCY_ADMIN_PIN = os.getenv("EMERGENCY_ADMIN_PIN", "").strip()
 EDGE_PAIRING_CODE_TTL_MINUTES = int(os.getenv("EDGE_PAIRING_CODE_TTL_MINUTES", "15"))
 EDGE_HEARTBEAT_OFFLINE_SECONDS = int(os.getenv("EDGE_HEARTBEAT_OFFLINE_SECONDS", "90"))
@@ -1466,6 +1466,31 @@ def edge_device_test_job(device_id):
     db().commit()
     flash("Test job queued.")
     return redirect(url_for("edge_device_detail", device_id=device_id))
+
+
+
+@app.get("/api/edge/contract")
+def api_edge_contract():
+    return jsonify({
+        "ok": True,
+        "contract_version": "1.0",
+        "pairing_code_format": "numeric-6",
+        "flow": "register-approve-poll",
+        "register_endpoint": "/api/edge/register",
+        "pair_status_endpoint": "/api/edge/pair-status",
+        "heartbeat_endpoint": "/api/edge/heartbeat",
+        "jobs_endpoint": "/api/edge/jobs",
+    })
+
+
+@app.post("/api/v1/edge/register")
+def api_v1_edge_register():
+    return api_edge_register()
+
+
+@app.post("/api/v1/edge/pair-status")
+def api_v1_edge_pair_status():
+    return api_edge_pair_status()
 
 
 @app.post("/api/edge/register")

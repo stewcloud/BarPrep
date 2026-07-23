@@ -1,5 +1,15 @@
 # Changelog
 
+## [6.1b] - 2026-07-23
+### Added
+- Explicit Edge pairing contract endpoint
+- API v1 aliases for registration and pairing status
+
+### Changed
+- Standardized pairing codes as six numeric digits
+- Standardized flow as register, approve, then poll
+
+
 ## [6.1a] - 2026-07-23
 ### Added
 - Pending-device approval workflow

@@ -218,3 +218,11 @@ The aligned pairing sequence is:
 7. Edge stores the API key, sends heartbeats, and polls jobs.
 
 The legacy `/api/edge/pair` endpoint now returns HTTP 409 with migration instructions.
+
+## v6.1b — Edge Pairing Contract
+
+- Six-digit numeric pairing codes only
+- Edge self-registers with `/api/edge/register`
+- Core approval through Edge Devices
+- Edge polls `/api/edge/pair-status`
+- Compatibility aliases under `/api/v1/edge/register` and `/api/v1/edge/pair-status`
